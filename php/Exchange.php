@@ -138,6 +138,7 @@ class Exchange {
         'independentreserve',
         'indodax',
         'itbit',
+        'kabus',
         'kraken',
         'kucoin',
         'kucoinfutures',

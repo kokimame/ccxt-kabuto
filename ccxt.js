@@ -119,6 +119,7 @@ const exchanges = {
     'independentreserve':      require ('./js/independentreserve.js'),
     'indodax':                 require ('./js/indodax.js'),
     'itbit':                   require ('./js/itbit.js'),
+    'kabus':                   require ('./js/kabus.js'),
     'kraken':                  require ('./js/kraken.js'),
     'kucoin':                  require ('./js/kucoin.js'),
     'kucoinfutures':           require ('./js/kucoinfutures.js'),

@@ -597,7 +597,9 @@
     "Woo",
     "WOO X",
     "okx.com",
-    "OKX"
+    "OKX",
+    "twitter.com",
+    null
   ],
   "collective": {
     "type": "opencollective",
