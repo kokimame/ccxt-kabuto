@@ -12,12 +12,102 @@ class kabus extends Exchange {
     public function describe() {
         return $this->deep_extend(parent::describe (), array(
             'id' => 'kabus',
+            'name' => 'Kabus',
+            'countries' => array( 'JP' ),
+            'version' => 'v1',
+            'rateLimit' => 1000,
+            'hostname' => '192.168.11.6:8070',
             'urls' => array(
                 'logo' => 'https://pbs.twimg.com/profile_images/1476235905375813633/-jRNbwhv_400x400.jpg',
-                'api' => 'https://api.kabus',
+                'api' => 'http://{hostname}/live/kabusapi',
                 'www' => 'https://twitter.com/KabutoTheBot',
                 'doc' => 'https://twitter.com/KabutoTheBot',
             ),
+            'has' => array(
+                'CORS' => null,
+                'spot' => true,
+                'margin' => null,
+                'swap' => null,
+                'future' => null,
+                'option' => null,
+                'fetchTicker' => true,
+            ),
+            'api' => array(
+                'public' => array(
+                    'get' => array(
+                        'board/{symbol}',
+                    ),
+                ),
+            ),
         ));
+    }
+
+    public function fetch_markets($params = array ()) {
+        $markets = array(
+            '8306@1',
+            '4689@1',
+            '6501@1',
+            '3826@1',
+            '5020@1',
+            '3632@1',
+            '5191@1',
+            '6440@1',
+            '167030018@24',
+        );
+        $result = array();
+        for ($i = 0; $i < count($markets); $i++) {
+            $result[] = array(
+                'id' => $i,
+                'symbol' => $markets[$i],
+                'base' => 'JPY',
+                'quote' => 'JPY',
+                'maker' => 0.001,
+                'taker' => 0.001,
+                'active' => true,
+                'min_unit' => 100,
+                // value limits when placing orders on this market
+                'limits' => array(
+                    'amount' => array(
+                        // order amount should be > min
+                        'min' => 100,
+                        // order amount should be < max
+                        'max' => 100000000,
+                    ),
+                    'price' => array(
+                        'min' => 100,
+                        'max' => 100000000,
+                    ),
+                    // order cost = price * amount
+                    'cost' => array(
+                        'min' => 0,
+                        'max' => 100000000,
+                    ),
+                ),
+            );
+        }
+        return $result;
+    }
+
+    public function fetch_ticker($symbol, $params = array ()) {
+        yield $this->load_markets();
+        $request = array(
+            'symbol' => $symbol,
+        );
+        return $this->publicGetBoardSymbol (array_merge($request, $params));
+    }
+
+    public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
+        $request = '/' . $this->implode_params($path, $params);
+        // if ($method === 'GET') {
+        //     if ($params) {
+        //         $request .= '?' . $this->urlencode($params);
+        //     }
+        // }
+        $url = $this->implode_hostname($this->urls['api']) . $request;
+        $headers = array(
+            'X-API-KEY' => $this->apiKey,
+            'Content-Type' => 'application/json',
+        );
+        return array( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 }
