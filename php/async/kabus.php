@@ -52,6 +52,7 @@ class kabus extends Exchange {
             '3632@1',
             '5191@1',
             '6440@1',
+            '8897@1',
             '167030018@24',
         );
         $result = array();
@@ -98,11 +99,6 @@ class kabus extends Exchange {
 
     public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
         $request = '/' . $this->implode_params($path, $params);
-        // if ($method === 'GET') {
-        //     if ($params) {
-        //         $request .= '?' . $this->urlencode($params);
-        //     }
-        // }
         $url = $this->implode_hostname($this->urls['api']) . $request;
         $headers = array(
             'X-API-KEY' => $this->apiKey,

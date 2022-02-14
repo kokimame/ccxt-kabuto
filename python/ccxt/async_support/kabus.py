@@ -50,6 +50,7 @@ class kabus(Exchange):
             '3632@1',
             '5191@1',
             '6440@1',
+            '8897@1',
             '167030018@24',
         ]
         result = []
@@ -93,11 +94,6 @@ class kabus(Exchange):
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
         request = '/' + self.implode_params(path, params)
-        # if method == 'GET':
-        #     if params:
-        #         request += '?' + self.urlencode(params)
-        #     }
-        # }
         url = self.implode_hostname(self.urls['api']) + request
         headers = {
             'X-API-KEY': self.apiKey,

@@ -93,11 +93,6 @@ module.exports = class kabus extends Exchange {
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         const request = '/' + this.implodeParams (path, params);
-        // if (method === 'GET') {
-        //     if (Object.keys (params).length) {
-        //         request += '?' + this.urlencode (params);
-        //     }
-        // }
         const url = this.implodeHostname (this.urls['api']) + request;
         headers = {
             'X-API-KEY': this.apiKey,
