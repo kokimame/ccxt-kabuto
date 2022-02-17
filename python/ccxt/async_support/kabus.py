@@ -4,6 +4,8 @@
 # https://github.com/ccxt/ccxt/blob/master/CONTRIBUTING.md#how-to-contribute-code
 
 from ccxt.async_support.base.exchange import Exchange
+import json
+from ccxt.base.errors import ExchangeError
 
 
 class kabus(Exchange):
@@ -15,10 +17,9 @@ class kabus(Exchange):
             'countries': ['JP'],
             'version': 'v1',
             'rateLimit': 1000,
-            'hostname': '192.168.11.6:8070',
             'urls': {
                 'logo': 'https://pbs.twimg.com/profile_images/1476235905375813633/-jRNbwhv_400x400.jpg',
-                'api': 'http://{hostname}/live/kabusapi',
+                'api': 'http://{ipaddr}/live/kabusapi',
                 'www': 'https://twitter.com/KabutoTheBot',
                 'doc': 'https://twitter.com/KabutoTheBot',
             },
@@ -29,14 +30,31 @@ class kabus(Exchange):
                 'swap': None,
                 'future': None,
                 'option': None,
+                'fetchOrderBook': True,
                 'fetchTicker': True,
             },
             'api': {
                 'public': {
                     'get': [
                         'board/{symbol}',
+                        '',
+                    ],
+                    'post': [
+                        'token',
                     ],
                 },
+            },
+            'requiredCredentials': {
+                'ipaddr': True,
+                'password': True,
+                'apiKey': False,
+                'secret': False,
+                'uid': False,
+                'login': False,
+                'twofa': False,  # 2-factor authentication(one-time password key)
+                'privateKey': False,  # a "0x"-prefixed hexstring private key for a wallet
+                'walletAddress': False,  # the wallet address "0x"-prefixed hexstring
+                'token': False,  # reserved for HTTP auth in some cases
             },
         })
 
@@ -92,9 +110,40 @@ class kabus(Exchange):
         }
         return self.publicGetBoardSymbol(self.extend(request, params))
 
+    async def fetch_order_book(self, symbol, params={}):
+        ticker = await self.fetch_ticker(symbol, params)
+        keys = list(ticker.keys())
+        buys = []
+        sells = []
+        for i in range(0, len(keys)):
+            key = keys[i]
+            if key.find('Buy') == 0:
+                buys.append([ticker[key]['Price'], ticker[key]['Qty']])
+            if key.find('Sell') == 0:
+                sells.append([ticker[key]['Price'], ticker[key]['Qty']])
+        orderbook = {'bids': buys, 'asks': sells}
+        return self.parse_order_book(orderbook, symbol)
+
+    def fetch_token(self):
+        url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
+        headers = {
+            'Content-Type': 'application/json',
+        }
+        # json.loads() is needed to load json module in transpiled Python script
+        body = json.dumps({'APIPassword': self.password})
+        response = self.fetch(url, 'POST', headers, body)
+        if response['ResultCode'] == '0':
+            return response['Token']
+        else:
+            # Temporary placeholder for exception when it fails to get a new token
+            raise ExchangeError()
+
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
+        self.check_required_credentials()
+        if not self.apiKey:
+            self.apiKey = self.fetch_token()
         request = '/' + self.implode_params(path, params)
-        url = self.implode_hostname(self.urls['api']) + request
+        url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + request
         headers = {
             'X-API-KEY': self.apiKey,
             'Content-Type': 'application/json',

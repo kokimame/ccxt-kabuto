@@ -6,6 +6,7 @@ namespace ccxt\async;
 // https://github.com/ccxt/ccxt/blob/master/CONTRIBUTING.md#how-to-contribute-code
 
 use Exception; // a common import
+use \ccxt\ExchangeError;
 
 class kabus extends Exchange {
 
@@ -16,10 +17,9 @@ class kabus extends Exchange {
             'countries' => array( 'JP' ),
             'version' => 'v1',
             'rateLimit' => 1000,
-            'hostname' => '192.168.11.6:8070',
             'urls' => array(
                 'logo' => 'https://pbs.twimg.com/profile_images/1476235905375813633/-jRNbwhv_400x400.jpg',
-                'api' => 'http://{hostname}/live/kabusapi',
+                'api' => 'http://{ipaddr}/live/kabusapi',
                 'www' => 'https://twitter.com/KabutoTheBot',
                 'doc' => 'https://twitter.com/KabutoTheBot',
             ),
@@ -30,14 +30,31 @@ class kabus extends Exchange {
                 'swap' => null,
                 'future' => null,
                 'option' => null,
+                'fetchOrderBook' => true,
                 'fetchTicker' => true,
             ),
             'api' => array(
                 'public' => array(
                     'get' => array(
                         'board/{symbol}',
+                        '',
+                    ),
+                    'post' => array(
+                        'token',
                     ),
                 ),
+            ),
+            'requiredCredentials' => array(
+                'ipaddr' => true,
+                'password' => true,
+                'apiKey' => false,
+                'secret' => false,
+                'uid' => false,
+                'login' => false,
+                'twofa' => false, // 2-factor authentication (one-time password key)
+                'privateKey' => false, // a "0x"-prefixed hexstring private key for a wallet
+                'walletAddress' => false, // the wallet address "0x"-prefixed hexstring
+                'token' => false, // reserved for HTTP auth in some cases
             ),
         ));
     }
@@ -97,9 +114,47 @@ class kabus extends Exchange {
         return $this->publicGetBoardSymbol (array_merge($request, $params));
     }
 
+    public function fetch_order_book($symbol, $params = array ()) {
+        $ticker = yield $this->fetch_ticker($symbol, $params);
+        $keys = is_array($ticker) ? array_keys($ticker) : array();
+        $buys = array();
+        $sells = array();
+        for ($i = 0; $i < count($keys); $i++) {
+            $key = $keys[$i];
+            if (mb_strpos($key, 'Buy') === 0) {
+                $buys[] = [ $ticker[$key]['Price'], $ticker[$key]['Qty'] ];
+            }
+            if (mb_strpos($key, 'Sell') === 0) {
+                $sells[] = [ $ticker[$key]['Price'], $ticker[$key]['Qty'] ];
+            }
+        }
+        $orderbook = array( 'bids' => $buys, 'asks' => $sells );
+        return $this->parse_order_book($orderbook, $symbol);
+    }
+
+    public function fetch_token() {
+        $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . '/token';
+        $headers = array(
+            'Content-Type' => 'application/json',
+        );
+        // JSON.parse() is needed to load json module in transpiled Python script
+        $body = json_encode (array( 'APIPassword' => $this->password ));
+        $response = $this->fetch($url, 'POST', $headers, $body);
+        if ($response['ResultCode'] === '0') {
+            return $response['Token'];
+        } else {
+            // Temporary placeholder for exception when it fails to get a new token
+            throw new ExchangeError();
+        }
+    }
+
     public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
+        $this->check_required_credentials();
+        if (!$this->apiKey) {
+            $this->apiKey = $this->fetch_token();
+        }
         $request = '/' . $this->implode_params($path, $params);
-        $url = $this->implode_hostname($this->urls['api']) . $request;
+        $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . $request;
         $headers = array(
             'X-API-KEY' => $this->apiKey,
             'Content-Type' => 'application/json',

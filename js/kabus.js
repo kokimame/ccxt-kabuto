@@ -1,6 +1,7 @@
 'use strict';
 
 const Exchange = require ('./base/Exchange');
+const { ExchangeError } = require ('./base/errors');
 
 module.exports = class kabus extends Exchange {
     describe () {
@@ -10,10 +11,9 @@ module.exports = class kabus extends Exchange {
             'countries': [ 'JP' ],
             'version': 'v1',
             'rateLimit': 1000,
-            'hostname': '192.168.11.6:8070',
             'urls': {
                 'logo': 'https://pbs.twimg.com/profile_images/1476235905375813633/-jRNbwhv_400x400.jpg',
-                'api': 'http://{hostname}/live/kabusapi',
+                'api': 'http://{ipaddr}/live/kabusapi',
                 'www': 'https://twitter.com/KabutoTheBot',
                 'doc': 'https://twitter.com/KabutoTheBot',
             },
@@ -24,14 +24,31 @@ module.exports = class kabus extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'fetchOrderBook': true,
                 'fetchTicker': true,
             },
             'api': {
                 'public': {
                     'get': [
                         'board/{symbol}',
+                        '',
+                    ],
+                    'post': [
+                        'token',
                     ],
                 },
+            },
+            'requiredCredentials': {
+                'ipaddr': true,
+                'password': true,
+                'apiKey': false,
+                'secret': false,
+                'uid': false,
+                'login': false,
+                'twofa': false, // 2-factor authentication (one-time password key)
+                'privateKey': false, // a "0x"-prefixed hexstring private key for a wallet
+                'walletAddress': false, // the wallet address "0x"-prefixed hexstring
+                'token': false, // reserved for HTTP auth in some cases
             },
         });
     }
@@ -91,9 +108,47 @@ module.exports = class kabus extends Exchange {
         return this.publicGetBoardSymbol (this.extend (request, params));
     }
 
+    async fetchOrderBook (symbol, params = {}) {
+        const ticker = await this.fetchTicker (symbol, params);
+        const keys = Object.keys (ticker);
+        const buys = [];
+        const sells = [];
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            if (key.indexOf ('Buy') === 0) {
+                buys.push ([ ticker[key]['Price'], ticker[key]['Qty'] ]);
+            }
+            if (key.indexOf ('Sell') === 0) {
+                sells.push ([ ticker[key]['Price'], ticker[key]['Qty'] ]);
+            }
+        }
+        const orderbook = { 'bids': buys, 'asks': sells };
+        return this.parseOrderBook (orderbook, symbol);
+    }
+
+    fetchToken () {
+        const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/token';
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        // JSON.parse() is needed to load json module in transpiled Python script
+        const body = JSON.stringify ({ 'APIPassword': this.password });
+        const response = this.fetch (url, 'POST', headers, body);
+        if (response['ResultCode'] === '0') {
+            return response['Token'];
+        } else {
+            // Temporary placeholder for exception when it fails to get a new token
+            throw new ExchangeError ();
+        }
+    }
+
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        this.checkRequiredCredentials ();
+        if (!this.apiKey) {
+            this.apiKey = this.fetchToken ();
+        }
         const request = '/' + this.implodeParams (path, params);
-        const url = this.implodeHostname (this.urls['api']) + request;
+        const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + request;
         headers = {
             'X-API-KEY': this.apiKey,
             'Content-Type': 'application/json',
