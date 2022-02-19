@@ -73,6 +73,7 @@ class kraken(Exchange):
                 'fetchIsolatedPositions': False,
                 'fetchLedger': True,
                 'fetchLedgerEntry': True,
+                'fetchLeverageTiers': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
@@ -499,16 +500,16 @@ class kraken(Exchange):
                 'contract': False,
                 'linear': None,
                 'inverse': None,
-                'maker': maker,
                 'taker': taker,
+                'maker': maker,
                 'contractSize': None,
                 'expiry': None,
                 'expiryDatetime': None,
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_integer(market, 'pair_decimals'),
                     'amount': self.safe_integer(market, 'lot_decimals'),
+                    'price': self.safe_integer(market, 'pair_decimals'),
                 },
                 'limits': {
                     'leverage': {
@@ -520,7 +521,7 @@ class kraken(Exchange):
                         'max': None,
                     },
                     'price': {
-                        'min': self.parse_precision(precisionPrice),
+                        'min': self.parse_number(self.parse_precision(precisionPrice)),
                         'max': None,
                     },
                     'cost': {
@@ -1640,6 +1641,27 @@ class kraken(Exchange):
         #         time:  1529223212,
         #       status: "Success"                                                       }
         #
+        #
+        # there can be an additional 'status-prop' field present
+        # deposit pending review by exchange => 'on-hold'
+        # the deposit is initiated by the exchange => 'return'
+        #
+        #      {
+        #          type: 'deposit',
+        #          method: 'Fidor Bank AG(Wire Transfer)',
+        #          aclass: 'currency',
+        #          asset: 'ZEUR',
+        #          refid: 'xxx-xxx-xxx',
+        #          txid: '12341234',
+        #          info: 'BANKCODEXXX',
+        #          amount: '38769.08',
+        #          fee: '0.0000',
+        #          time: 1644306552,
+        #          status: 'Success',
+        #          status-prop: 'on-hold'
+        #      }
+        #
+        #
         # fetchWithdrawals
         #
         #     {method: "Ether",
@@ -1653,6 +1675,9 @@ class kraken(Exchange):
         #         time:  1530481750,
         #       status: "Success"                                                             }
         #
+        # withdrawals may also have an additional 'status-prop' field present
+        #
+        #
         id = self.safe_string(transaction, 'refid')
         txid = self.safe_string(transaction, 'txid')
         timestamp = self.safe_timestamp(transaction, 'time')
@@ -1661,6 +1686,12 @@ class kraken(Exchange):
         address = self.safe_string(transaction, 'info')
         amount = self.safe_number(transaction, 'amount')
         status = self.parse_transaction_status(self.safe_string(transaction, 'status'))
+        statusProp = self.safe_string(transaction, 'status-prop')
+        isOnHoldDeposit = statusProp == 'on-hold'
+        isCancellationRequest = statusProp == 'cancel-pending'
+        isOnHoldWithdrawal = statusProp == 'onhold'
+        if isOnHoldDeposit or isCancellationRequest or isOnHoldWithdrawal:
+            status = 'pending'
         type = self.safe_string(transaction, 'type')  # injected from the outside
         feeCost = self.safe_number(transaction, 'fee')
         if feeCost is None:

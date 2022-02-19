@@ -50,6 +50,7 @@ module.exports = class bittrex extends Exchange {
                 'fetchIndexOHLCV': false,
                 'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
+                'fetchLeverageTiers': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': 'emulated',
@@ -295,7 +296,6 @@ module.exports = class bittrex extends Exchange {
             const quoteId = this.safeString (market, 'quoteCurrencySymbol');
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
-            const pricePrecision = this.safeInteger (market, 'precision', 8);
             const status = this.safeString (market, 'status');
             result.push ({
                 'id': this.safeString (market, 'symbol'),
@@ -323,9 +323,13 @@ module.exports = class bittrex extends Exchange {
                 'optionType': undefined,
                 'precision': {
                     'amount': parseInt ('8'),
-                    'price': pricePrecision,
+                    'price': this.safeInteger (market, 'precision', 8),
                 },
                 'limits': {
+                    'leverage': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
                     'amount': {
                         'min': this.safeNumber (market, 'minTradeSize'),
                         'max': undefined,
@@ -335,10 +339,6 @@ module.exports = class bittrex extends Exchange {
                         'max': undefined,
                     },
                     'cost': {
-                        'min': undefined,
-                        'max': undefined,
-                    },
-                    'leverage': {
                         'min': undefined,
                         'max': undefined,
                     },

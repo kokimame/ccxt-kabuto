@@ -54,6 +54,7 @@ class kucoinfutures extends kucoin {
                 'fetchIndexOHLCV' => false,
                 'fetchL3OrderBook' => true,
                 'fetchLedger' => true,
+                'fetchLeverageTiers' => true,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => true,
@@ -104,6 +105,7 @@ class kucoinfutures extends kucoin {
                     'get' => array(
                         'contracts/active' => 1,
                         'contracts/{symbol}' => 1,
+                        'contracts/risk-limit/{symbol}' => 1,
                         'ticker' => 1,
                         'level2/snapshot' => 1.33,
                         'level2/depth{limit}' => 1,
@@ -287,6 +289,10 @@ class kucoinfutures extends kucoin {
                     'ERC20' => 'eth',
                     'TRC20' => 'trx',
                 ),
+                // 'code' => 'BTC',
+                // 'fetchBalance' => array(
+                //    'code' => 'BTC',
+                // ),
             ),
         ));
     }
@@ -445,8 +451,8 @@ class kucoinfutures extends kucoin {
                 'strike' => null,
                 'optionType' => null,
                 'precision' => array(
-                    'price' => $this->safe_number($market, 'tickSize'),
                     'amount' => $this->safe_number($market, 'lotSize'),
+                    'price' => $this->safe_number($market, 'tickSize'),
                 ),
                 'limits' => array(
                     'leverage' => array(
@@ -1144,10 +1150,11 @@ class kucoinfutures extends kucoin {
         $cost = Precise::string_div($rawCost, $leverage);
         $average = null;
         if (Precise::string_gt($filled, '0')) {
+            $contractSize = $this->safe_string($market, 'contractSize');
             if ($market['linear']) {
-                $average = Precise::string_div($rawCost, Precise::string_mul($market['contractSize'], $filled));
+                $average = Precise::string_div($rawCost, Precise::string_mul($contractSize, $filled));
             } else {
-                $average = Precise::string_div(Precise::string_mul($market['contractSize'], $filled), $rawCost);
+                $average = Precise::string_div(Precise::string_mul($contractSize, $filled), $rawCost);
             }
         }
         // precision reported by their api is 8 d.p.
@@ -1250,13 +1257,22 @@ class kucoinfutures extends kucoin {
     public function fetch_balance($params = array ()) {
         yield $this->load_markets();
         // only fetches one balance at a time
-        // by default it will only fetch the BTC balance of the futures account
-        // you can send 'currency' in $params to fetch other currencies
-        // fetchBalance (array( 'type' => 'future', 'currency' => 'USDT' ))
-        $response = yield $this->futuresPrivateGetAccountOverview ($params);
+        $request = array();
+        $coin = $this->safe_string($params, 'coin');
+        $defaultCode = $this->safe_string($this->options, 'code');
+        $fetchBalanceOptions = $this->safe_value($this->options, 'fetchBalance', array());
+        $defaultCode = $this->safe_string($fetchBalanceOptions, 'code', $defaultCode);
+        $code = $this->safe_string($params, 'code', $defaultCode);
+        if ($coin !== null) {
+            $request['currency'] = $coin;
+        } else if ($code !== null) {
+            $currency = $this->currency($code);
+            $request['currency'] = $currency['id'];
+        }
+        $response = yield $this->futuresPrivateGetAccountOverview (array_merge($request, $params));
         //
         //     {
-        //         code => '200000',
+        //         $code => '200000',
         //         data => {
         //             accountEquity => 0.00005,
         //             unrealisedPNL => 0,
@@ -1265,7 +1281,7 @@ class kucoinfutures extends kucoin {
         //             orderMargin => 0,
         //             frozenFunds => 0,
         //             availableBalance => 0.00005,
-        //             currency => 'XBT'
+        //             $currency => 'XBT'
         //         }
         //     }
         //
@@ -1432,6 +1448,30 @@ class kucoinfutures extends kucoin {
         //         "createdAt":1547026472000
         //     }
         //
+        // fetchMyTrades (private) v1
+        //
+        //      {
+        //          "symbol":"DOGEUSDTM",
+        //          "tradeId":"620ec41a96bab27b5f4ced56",
+        //          "orderId":"620ec41a0d1d8a0001560bd0",
+        //          "side":"sell",
+        //          "liquidity":"taker",
+        //          "forceTaker":true,
+        //          "price":"0.13969",
+        //          "size":1,
+        //          "value":"13.969",
+        //          "feeRate":"0.0006",
+        //          "fixFee":"0",
+        //          "feeCurrency":"USDT",
+        //          "stop":"",
+        //          "tradeTime":1645134874858018058,
+        //          "fee":"0.0083814",
+        //          "settleCurrency":"USDT",
+        //          "orderType":"market",
+        //          "tradeType":"trade",
+        //          "createdAt":1645134874858
+        //      }
+        //
         $marketId = $this->safe_string($trade, 'symbol');
         $symbol = $this->safe_symbol($marketId, $market, '-');
         $id = $this->safe_string_2($trade, 'tradeId', 'id');
@@ -1449,12 +1489,10 @@ class kucoinfutures extends kucoin {
         }
         $priceString = $this->safe_string_2($trade, 'price', 'dealPrice');
         $amountString = $this->safe_string_2($trade, 'size', 'amount');
-        $price = $this->parse_number($priceString);
-        $amount = $this->parse_number($amountString);
         $side = $this->safe_string($trade, 'side');
         $fee = null;
-        $feeCost = $this->safe_number($trade, 'fee');
-        if ($feeCost !== null) {
+        $feeCostString = $this->safe_string($trade, 'fee');
+        if ($feeCostString !== null) {
             $feeCurrencyId = $this->safe_string($trade, 'feeCurrency');
             $feeCurrency = $this->safe_currency_code($feeCurrencyId);
             if ($feeCurrency === null) {
@@ -1463,25 +1501,25 @@ class kucoinfutures extends kucoin {
                 }
             }
             $fee = array(
-                'cost' => $feeCost,
+                'cost' => $feeCostString,
                 'currency' => $feeCurrency,
-                'rate' => $this->safe_number($trade, 'feeRate'),
+                'rate' => $this->safe_string($trade, 'feeRate'),
             );
         }
         $type = $this->safe_string_2($trade, 'type', 'orderType');
         if ($type === 'match') {
             $type = null;
         }
-        $cost = $this->safe_number_2($trade, 'funds', 'dealValue');
-        if ($cost === null) {
+        $costString = $this->safe_string_2($trade, 'funds', 'value');
+        if ($costString === null) {
             $market = $this->market($symbol);
             $contractSize = $this->safe_string($market, 'contractSize');
             $contractCost = Precise::string_mul($priceString, $amountString);
             if ($contractSize && $contractCost) {
-                $cost = $this->parse_number(Precise::string_mul($contractCost, $contractSize));
+                $costString = Precise::string_mul($contractCost, $contractSize);
             }
         }
-        return array(
+        return $this->safe_trade(array(
             'info' => $trade,
             'id' => $id,
             'order' => $orderId,
@@ -1491,11 +1529,11 @@ class kucoinfutures extends kucoin {
             'type' => $type,
             'takerOrMaker' => $takerOrMaker,
             'side' => $side,
-            'price' => $price,
-            'amount' => $amount,
-            'cost' => $cost,
+            'price' => $priceString,
+            'amount' => $amountString,
+            'cost' => $costString,
             'fee' => $fee,
-        );
+        ), $market);
     }
 
     public function fetch_deposits($code = null, $since = null, $limit = null, $params = array ()) {
@@ -1596,5 +1634,57 @@ class kucoinfutures extends kucoin {
 
     public function fetch_ledger($code = null, $since = null, $limit = null, $params = array ()) {
         throw new BadRequest($this->id . ' has no method fetchLedger');
+    }
+
+    public function fetch_leverage_tiers($symbol = null, $params = array ()) {
+        yield $this->load_markets();
+        if ($symbol === null) {
+            throw new ArgumentsRequired($this->id . ' fetchLeverageTiers() requires a $symbol argument');
+        }
+        $market = $this->market($symbol);
+        if (!$market['contract']) {
+            throw new BadRequest($this->id . ' fetchLeverageTiers() supports contract markets only');
+        }
+        $request = array(
+            'symbol' => $market['id'],
+        );
+        $response = yield $this->futuresPublicGetContractsRiskLimitSymbol (array_merge($request, $params));
+        //
+        //    {
+        //        "code" => "200000",
+        //        "data" => array(
+        //            array(
+        //                "symbol" => "ETHUSDTM",
+        //                "level" => 1,
+        //                "maxRiskLimit" => 300000,
+        //                "minRiskLimit" => 0,
+        //                "maxLeverage" => 100,
+        //                "initialMargin" => 0.0100000000,
+        //                "maintainMargin" => 0.0050000000
+        //            ),
+        //            ...
+        //        )
+        //    }
+        //
+        $data = $this->safe_value($response, 'data');
+        $tiers = array();
+        for ($i = 0; $i < count($data); $i++) {
+            $tier = $data[$i];
+            $symbol = $this->safe_symbol($this->safe_string($tier, 'symbol'));
+            if (!(is_array($tiers) && array_key_exists($symbol, $tiers))) {
+                $tiers[$symbol] = array();
+            }
+            $market = $this->market($symbol);
+            $tiers[$symbol][] = array(
+                'tier' => $this->safe_number($tier, 'level'),
+                'notionalCurrency' => $market['base'],
+                'notionalFloor' => $this->safe_number($tier, 'minRiskLimit'),
+                'notionalCap' => $this->safe_number($tier, 'maxRiskLimit'),
+                'maintenanceMarginRate' => $this->safe_number($tier, 'maintainMargin'),
+                'maxLeverage' => $this->safe_number($tier, 'maxLeverage'),
+                'info' => $tier,
+            );
+        }
+        return $tiers;
     }
 }

@@ -18,6 +18,7 @@ from ccxt.base.errors import PermissionDenied
 from ccxt.base.errors import ArgumentsRequired
 from ccxt.base.errors import BadRequest
 from ccxt.base.errors import BadSymbol
+from ccxt.base.errors import BadResponse
 from ccxt.base.errors import InsufficientFunds
 from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
@@ -592,6 +593,8 @@ class ftx(Exchange):
             elif isFuture:
                 type = 'future'
                 expiry = self.parse8601(expiryDatetime)
+                if expiry is None:
+                    raise BadResponse(self.id + " symbol '" + id + "' is a future contract but with invalid expiry datetime: " + expiryDatetime)
                 parsedId = id.split('-')
                 length = len(parsedId)
                 if length > 2:
@@ -632,8 +635,8 @@ class ftx(Exchange):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_number(market, 'priceIncrement'),
                     'amount': self.safe_number(market, 'sizeIncrement'),
+                    'price': self.safe_number(market, 'priceIncrement'),
                 },
                 'limits': {
                     'leverage': {

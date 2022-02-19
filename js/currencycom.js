@@ -165,6 +165,7 @@ module.exports = class currencycom extends Exchange {
                 'FOX': 'Fox Corporation',
                 'GM': 'General Motors Co',
                 'IQ': 'iQIYI',
+                'OSK': 'Oshkosh',
                 'PLAY': "Dave & Buster's Entertainment",
             },
         });
@@ -303,7 +304,7 @@ module.exports = class currencycom extends Exchange {
                     limitPriceMax = maxPrice;
                 }
             }
-            let precisionAmount = this.parsePrecision (this.safeString (market, 'baseAssetPrecision'));
+            let precisionAmount = this.parseNumber (this.parsePrecision (this.safeString (market, 'baseAssetPrecision')));
             let limitAmount = {
                 'min': undefined,
                 'max': undefined,
@@ -347,20 +348,20 @@ module.exports = class currencycom extends Exchange {
                 'swap': false,
                 'future': false,
                 'option': false,
+                'active': active,
                 'contract': false,
                 'linear': undefined,
                 'inverse': undefined,
                 'taker': taker,
                 'maker': maker,
                 'contractSize': undefined,
-                'active': active,
                 'expiry': undefined,
                 'expiryDatetime': undefined,
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': precisionPrice,
                     'amount': precisionAmount,
+                    'price': precisionPrice,
                 },
                 'limits': {
                     'leverage': {

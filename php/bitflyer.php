@@ -23,14 +23,15 @@ class bitflyer extends Exchange {
             'has' => array(
                 'CORS' => null,
                 'spot' => true,
-                'margin' => null, // has but unimplemented
-                'swap' => null, // has but unimplemented
-                'future' => null, // has but unimplemented
+                'margin' => false,
+                'swap' => null, // has but not fully implemented
+                'future' => null, // has but not fully implemented
                 'option' => false,
                 'cancelOrder' => true,
                 'createOrder' => true,
                 'fetchBalance' => true,
                 'fetchClosedOrders' => 'emulated',
+                'fetchDeposits' => true,
                 'fetchMarkets' => true,
                 'fetchMyTrades' => true,
                 'fetchOpenOrders' => 'emulated',
@@ -40,6 +41,7 @@ class bitflyer extends Exchange {
                 'fetchPositions' => true,
                 'fetchTicker' => true,
                 'fetchTrades' => true,
+                'fetchWithdrawals' => true,
                 'withdraw' => true,
             ),
             'urls' => array(
@@ -103,10 +105,59 @@ class bitflyer extends Exchange {
         ));
     }
 
+    public function parse_expiry_date($expiry) {
+        $day = mb_substr($expiry, 0, 2 - 0);
+        $monthName = mb_substr($expiry, 2, 5 - 2);
+        $year = mb_substr($expiry, 5, 9 - 5);
+        $months = array(
+            'JAN' => '01',
+            'FEB' => '02',
+            'MAR' => '03',
+            'APR' => '04',
+            'MAY' => '05',
+            'JUN' => '06',
+            'JUL' => '07',
+            'AUG' => '08',
+            'SEP' => '09',
+            'OCT' => '10',
+            'NOV' => '11',
+            'DEC' => '12',
+        );
+        $month = $this->safe_string($months, $monthName);
+        return $this->parse8601($year . '-' . $month . '-' . $day . 'T00:00:00Z');
+    }
+
     public function fetch_markets($params = array ()) {
         $jp_markets = $this->publicGetGetmarkets ($params);
+        //
+        //     array(
+        //         // $spot
+        //         array( "product_code" => "BTC_JPY", "market_type" => "Spot" ),
+        //         array( "product_code" => "BCH_BTC", "market_type" => "Spot" ),
+        //         // forex $swap
+        //         array( "product_code" => "FX_BTC_JPY", "market_type" => "FX" ),
+        //         // $future
+        //         array(
+        //             "product_code" => "BTCJPY11FEB2022",
+        //             "alias" => "BTCJPY_MAT1WK",
+        //             "market_type" => "Futures",
+        //         ),
+        //     );
+        //
         $us_markets = $this->publicGetGetmarketsUsa ($params);
+        //
+        //     array(
+        //         array( "product_code" => "BTC_USD", "market_type" => "Spot" ),
+        //         array( "product_code" => "BTC_JPY", "market_type" => "Spot" ),
+        //     );
+        //
         $eu_markets = $this->publicGetGetmarketsEu ($params);
+        //
+        //     array(
+        //         array( "product_code" => "BTC_EUR", "market_type" => "Spot" ),
+        //         array( "product_code" => "BTC_JPY", "market_type" => "Spot" ),
+        //     );
+        //
         $markets = $this->array_concat($jp_markets, $us_markets);
         $markets = $this->array_concat($markets, $eu_markets);
         $result = array();
@@ -114,49 +165,96 @@ class bitflyer extends Exchange {
             $market = $markets[$i];
             $id = $this->safe_string($market, 'product_code');
             $currencies = explode('_', $id);
+            $marketType = $this->safe_string($market, 'market_type');
+            $swap = ($marketType === 'FX');
+            $future = ($marketType === 'Futures');
+            $spot = !$swap && !$future;
+            $type = 'spot';
+            $settle = null;
             $baseId = null;
             $quoteId = null;
-            $base = null;
-            $quote = null;
-            $numCurrencies = is_array($currencies) ? count($currencies) : 0;
-            if ($numCurrencies === 1) {
-                $baseId = mb_substr($id, 0, 3 - 0);
-                $quoteId = mb_substr($id, 3, 6 - 3);
-            } else if ($numCurrencies === 2) {
-                $baseId = $currencies[0];
-                $quoteId = $currencies[1];
-            } else {
-                $baseId = $currencies[1];
-                $quoteId = $currencies[2];
+            $expiry = null;
+            if ($spot) {
+                $baseId = $this->safe_string($currencies, 0);
+                $quoteId = $this->safe_string($currencies, 1);
+            } else if ($swap) {
+                $type = 'swap';
+                $baseId = $this->safe_string($currencies, 1);
+                $quoteId = $this->safe_string($currencies, 2);
+            } else if ($future) {
+                $alias = $this->safe_string($market, 'alias');
+                $splitAlias = explode('_', $alias);
+                $currencyIds = $this->safe_string($splitAlias, 0);
+                $baseId = mb_substr($currencyIds, 0, -3 - 0);
+                $quoteId = mb_substr($currencyIds, -3);
+                $splitId = explode($currencyIds, $id);
+                $expiryDate = $this->safe_string($splitId, 1);
+                $expiry = $this->parse_expiry_date($expiryDate);
+                $type = 'future';
             }
             $base = $this->safe_currency_code($baseId);
             $quote = $this->safe_currency_code($quoteId);
-            $symbol = ($numCurrencies === 2) ? ($base . '/' . $quote) : $id;
-            $fees = $this->safe_value($this->fees, $symbol, $this->fees['trading']);
-            $maker = $this->safe_value($fees, 'maker', $this->fees['trading']['maker']);
-            $taker = $this->safe_value($fees, 'taker', $this->fees['trading']['taker']);
-            $spot = true;
-            $future = false;
-            $type = 'spot';
-            if ((is_array($market) && array_key_exists('alias', $market)) || ($currencies[0] === 'FX')) {
-                $type = 'future';
-                $future = true;
-                $spot = false;
+            $symbol = $base . '/' . $quote;
+            $taker = $this->fees['trading']['taker'];
+            $maker = $this->fees['trading']['maker'];
+            $contract = $swap || $future;
+            if ($contract) {
                 $maker = 0.0;
                 $taker = 0.0;
+                $settle = 'JPY';
+                $symbol = $symbol . ':' . $settle;
+                if ($future) {
+                    $symbol = $symbol . '-' . $this->yymmdd($expiry);
+                }
             }
             $result[] = array(
                 'id' => $id,
                 'symbol' => $symbol,
                 'base' => $base,
                 'quote' => $quote,
+                'settle' => $settle,
                 'baseId' => $baseId,
                 'quoteId' => $quoteId,
-                'maker' => $maker,
-                'taker' => $taker,
+                'settleId' => null,
                 'type' => $type,
                 'spot' => $spot,
+                'margin' => false,
+                'swap' => $swap,
                 'future' => $future,
+                'option' => false,
+                'active' => true,
+                'contract' => $contract,
+                'linear' => $spot ? null : true,
+                'inverse' => $spot ? null : false,
+                'taker' => $taker,
+                'maker' => $maker,
+                'contractSize' => null,
+                'expiry' => $expiry,
+                'expiryDatetime' => $this->iso8601($expiry),
+                'strike' => null,
+                'optionType' => null,
+                'precision' => array(
+                    'amount' => null,
+                    'price' => null,
+                ),
+                'limits' => array(
+                    'leverage' => array(
+                        'min' => null,
+                        'max' => null,
+                    ),
+                    'amount' => array(
+                        'min' => null,
+                        'max' => null,
+                    ),
+                    'price' => array(
+                        'min' => null,
+                        'max' => null,
+                    ),
+                    'cost' => array(
+                        'min' => null,
+                        'max' => null,
+                    ),
+                ),
                 'info' => $market,
             );
         }
@@ -519,6 +617,152 @@ class bitflyer extends Exchange {
         return array(
             'info' => $response,
             'id' => $id,
+        );
+    }
+
+    public function fetch_deposits($code = null, $since = null, $limit = null, $params = array ()) {
+        $this->load_markets();
+        $currency = null;
+        $request = array();
+        if ($code !== null) {
+            $currency = $this->currency($code);
+        }
+        if ($limit !== null) {
+            $request['count'] = $limit; // default 100
+        }
+        $response = $this->privateGetGetcoinins (array_merge($request, $params));
+        // array(
+        //   {
+        //     "id" => 100,
+        //     "order_id" => "CDP20151227-024141-055555",
+        //     "currency_code" => "BTC",
+        //     "amount" => 0.00002,
+        //     "address" => "1WriteySQufKZ2pVuM1oMhPrTtTVFq35j",
+        //     "tx_hash" => "9f92ee65a176bb9545f7becb8706c50d07d4cee5ffca34d8be3ef11d411405ae",
+        //     "status" => "COMPLETED",
+        //     "event_date" => "2015-11-27T08:59:20.301"
+        //   }
+        // )
+        return $this->parse_transactions($response, $currency, $since, $limit);
+    }
+
+    public function fetch_withdrawals($code = null, $since = null, $limit = null, $params = array ()) {
+        $this->load_markets();
+        $currency = null;
+        $request = array();
+        if ($code !== null) {
+            $currency = $this->currency($code);
+        }
+        if ($limit !== null) {
+            $request['count'] = $limit; // default 100
+        }
+        $response = $this->privateGetGetcoinouts (array_merge($request, $params));
+        //
+        // array(
+        //   {
+        //     "id" => 500,
+        //     "order_id" => "CWD20151224-014040-077777",
+        //     "currency_code" => "BTC",
+        //     "amount" => 0.1234,
+        //     "address" => "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        //     "tx_hash" => "724c07dfd4044abcb390b0412c3e707dd5c4f373f0a52b3bd295ce32b478c60a",
+        //     "fee" => 0.0005,
+        //     "additional_fee" => 0.0001,
+        //     "status" => "COMPLETED",
+        //     "event_date" => "2015-12-24T01:40:40.397"
+        //   }
+        // )
+        //
+        return $this->parse_transactions($response, $currency, $since, $limit);
+    }
+
+    public function parse_deposit_status($status) {
+        $statuses = array(
+            'PENDING' => 'pending',
+            'COMPLETED' => 'ok',
+        );
+        return $this->safe_string($statuses, $status, $status);
+    }
+
+    public function parse_withdrawal_status($status) {
+        $statuses = array(
+            'PENDING' => 'pending',
+            'COMPLETED' => 'ok',
+        );
+        return $this->safe_string($statuses, $status, $status);
+    }
+
+    public function parse_transaction($transaction, $currency = null) {
+        //
+        // fetchDeposits
+        //
+        //   {
+        //     "id" => 100,
+        //     "order_id" => "CDP20151227-024141-055555",
+        //     "currency_code" => "BTC",
+        //     "amount" => 0.00002,
+        //     "address" => "1WriteySQufKZ2pVuM1oMhPrTtTVFq35j",
+        //     "tx_hash" => "9f92ee65a176bb9545f7becb8706c50d07d4cee5ffca34d8be3ef11d411405ae",
+        //     "status" => "COMPLETED",
+        //     "event_date" => "2015-11-27T08:59:20.301"
+        //   }
+        //
+        // fetchWithdrawals
+        //
+        //   {
+        //     "id" => 500,
+        //     "order_id" => "CWD20151224-014040-077777",
+        //     "currency_code" => "BTC",
+        //     "amount" => 0.1234,
+        //     "address" => "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        //     "tx_hash" => "724c07dfd4044abcb390b0412c3e707dd5c4f373f0a52b3bd295ce32b478c60a",
+        //     "fee" => 0.0005,
+        //     "additional_fee" => 0.0001,
+        //     "status" => "COMPLETED",
+        //     "event_date" => "2015-12-24T01:40:40.397"
+        //   }
+        //
+        $id = $this->safe_string($transaction, 'id');
+        $address = $this->safe_string($transaction, 'address');
+        $currencyId = $this->safe_string($transaction, 'currency_code');
+        $code = $this->safe_currency_code($currencyId, $currency);
+        $timestamp = $this->parse8601($this->safe_string($transaction, 'event_date'));
+        $amount = $this->safe_number($transaction, 'amount');
+        $txId = $this->safe_string($transaction, 'tx_hash');
+        $rawStatus = $this->safe_string($transaction, 'status');
+        $type = null;
+        $status = null;
+        $fee = null;
+        if (is_array($transaction) && array_key_exists('fee', $transaction)) {
+            $type = 'withdrawal';
+            $status = $this->parse_withdrawal_status($rawStatus);
+            $feeCost = $this->safe_number($transaction, 'fee');
+            $additionalFee = $this->safe_number($transaction, 'additional_fee');
+            $fee = array( 'currency' => $code, 'cost' => $feeCost . $additionalFee );
+        } else {
+            $type = 'deposit';
+            $status = $this->parse_deposit_status($rawStatus);
+        }
+        return array(
+            'info' => $transaction,
+            'id' => $id,
+            'txid' => $txId,
+            'timestamp' => $timestamp,
+            'datetime' => $this->iso8601($timestamp),
+            'network' => null,
+            'address' => $address,
+            'addressTo' => $address,
+            'addressFrom' => null,
+            'tag' => null,
+            'tagTo' => null,
+            'tagFrom' => null,
+            'type' => $type,
+            'amount' => $amount,
+            'currency' => $code,
+            'status' => $status,
+            'updated' => null,
+            'internal' => null,
+            'fee' => $fee,
         );
     }
 

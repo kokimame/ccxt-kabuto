@@ -53,6 +53,7 @@ class idex extends Exchange {
                 'fetchIndexOHLCV' => false,
                 'fetchIsolatedPositions' => false,
                 'fetchLeverage' => false,
+                'fetchLeverageTiers' => false,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => true,
@@ -238,8 +239,8 @@ class idex extends Exchange {
                 'strike' => null,
                 'optionType' => null,
                 'precision' => array(
-                    'price' => intval($quotePrecisionString),
                     'amount' => intval($basePrecisionString),
+                    'price' => intval($quotePrecisionString),
                 ),
                 'limits' => array(
                     'leverage' => array(

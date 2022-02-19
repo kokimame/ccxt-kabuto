@@ -344,7 +344,6 @@ class bitpanda extends Exchange {
             $quote = $this->safe_currency_code($quoteId);
             $state = $this->safe_string($market, 'state');
             $result[] = array(
-                'info' => $market,
                 'id' => $id,
                 'symbol' => $base . '/' . $quote,
                 'base' => $base,
@@ -368,8 +367,6 @@ class bitpanda extends Exchange {
                 'expiryDatetime' => null,
                 'strike' => null,
                 'optionType' => null,
-                'deposit' => null,
-                'withdraw' => null,
                 'precision' => array(
                     'amount' => $this->safe_integer($market, 'amount_precision'),
                     'price' => $this->safe_integer($market, 'market_precision'),
@@ -392,6 +389,7 @@ class bitpanda extends Exchange {
                         'max' => null,
                     ),
                 ),
+                'info' => $market,
             );
         }
         return $result;

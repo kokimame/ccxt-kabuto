@@ -12,7 +12,6 @@ from ccxt.base.errors import InsufficientFunds
 from ccxt.base.errors import AddressPending
 from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
-from ccxt.base.precise import Precise
 
 
 class upbit(Exchange):
@@ -330,7 +329,6 @@ class upbit(Exchange):
         askFee = self.safe_number(response, 'ask_fee')
         fee = max(bidFee, askFee)
         return {
-            'info': response,
             'id': marketId,
             'symbol': base + '/' + quote,
             'base': base,
@@ -357,8 +355,8 @@ class upbit(Exchange):
             'strike': None,
             'optionType': None,
             'precision': {
-                'price': 8,
-                'amount': 8,
+                'amount': int('8'),
+                'price': int('8'),
             },
             'limits': {
                 'leverage': {
@@ -377,28 +375,21 @@ class upbit(Exchange):
                     'min': self.safe_number(bid, 'min_total'),
                     'max': self.safe_number(marketInfo, 'max_total'),
                 },
+                'info': response,
             },
         }
 
     def fetch_markets(self, params={}):
         response = self.publicGetMarketAll(params)
         #
-        #     [{      market: "KRW-BTC",
-        #          korean_name: "비트코인",
-        #         english_name: "Bitcoin"  },
-        #       {      market: "KRW-DASH",
-        #          korean_name: "대시",
-        #         english_name: "Dash"      },
-        #       {      market: "KRW-ETH",
-        #          korean_name: "이더리움",
-        #         english_name: "Ethereum"},
-        #       {      market: "BTC-ETH",
-        #          korean_name: "이더리움",
-        #         english_name: "Ethereum"},
-        #       ...,
-        #       {      market: "BTC-BSV",
-        #          korean_name: "비트코인에스브이",
-        #         english_name: "Bitcoin SV"}]
+        #    [
+        #        {
+        #            market: "KRW-BTC",
+        #            korean_name: "비트코인",
+        #            english_name: "Bitcoin"
+        #        },
+        #        ...,
+        #    ]
         #
         result = []
         for i in range(0, len(response)):
@@ -707,40 +698,25 @@ class upbit(Exchange):
             side = 'sell'
         elif askOrBid == 'bid':
             side = 'buy'
-        cost = self.safe_number(trade, 'funds')
-        priceString = self.safe_string_2(trade, 'trade_price', 'price')
-        amountString = self.safe_string_2(trade, 'trade_volume', 'volume')
-        price = self.parse_number(priceString)
-        amount = self.parse_number(amountString)
-        if cost is None:
-            cost = self.parse_number(Precise.string_mul(priceString, amountString))
+        cost = self.safe_string(trade, 'funds')
+        price = self.safe_string_2(trade, 'trade_price', 'price')
+        amount = self.safe_string_2(trade, 'trade_volume', 'volume')
         marketId = self.safe_string_2(trade, 'market', 'code')
-        market = self.safe_market(marketId, market)
+        market = self.safe_market(marketId, market, '-')
         fee = None
-        feeCurrency = None
-        symbol = None
-        if market is not None:
-            symbol = market['symbol']
-            feeCurrency = market['quote']
-        else:
-            baseId, quoteId = marketId.split('-')
-            base = self.safe_currency_code(baseId)
-            quote = self.safe_currency_code(quoteId)
-            symbol = base + '/' + quote
-            feeCurrency = quote
         feeCost = self.safe_string(trade, askOrBid + '_fee')
         if feeCost is not None:
             fee = {
-                'currency': feeCurrency,
+                'currency': market['quote'],
                 'cost': feeCost,
             }
-        return {
+        return self.safe_trade({
             'id': id,
             'info': trade,
             'order': orderId,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': None,
             'side': side,
             'takerOrMaker': None,
@@ -748,7 +724,7 @@ class upbit(Exchange):
             'amount': amount,
             'cost': cost,
             'fee': fee,
-        }
+        }, market)
 
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
         self.load_markets()

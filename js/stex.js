@@ -49,6 +49,7 @@ module.exports = class stex extends Exchange {
                 'fetchIndexOHLCV': false,
                 'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
+                'fetchLeverageTiers': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
@@ -334,7 +335,10 @@ module.exports = class stex extends Exchange {
                 'fee': fee,
                 'precision': parseInt (precision),
                 'limits': {
-                    'amount': { 'min': this.parseNumber (amountLimit), 'max': undefined },
+                    'amount': {
+                        'min': this.parseNumber (amountLimit),
+                        'max': undefined,
+                    },
                     'deposit': {
                         'min': this.safeNumber (currency, 'minimum_deposit_amount'),
                         'max': undefined,
@@ -431,8 +435,8 @@ module.exports = class stex extends Exchange {
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': this.safeInteger (market, 'market_precision'),
                     'amount': this.safeInteger (market, 'currency_precision'),
+                    'price': this.safeInteger (market, 'market_precision'),
                 },
                 'limits': {
                     'leverage': {

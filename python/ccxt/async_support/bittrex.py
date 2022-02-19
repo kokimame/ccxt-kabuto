@@ -73,6 +73,7 @@ class bittrex(Exchange):
                 'fetchIndexOHLCV': False,
                 'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
+                'fetchLeverageTiers': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': 'emulated',
@@ -315,7 +316,6 @@ class bittrex(Exchange):
             quoteId = self.safe_string(market, 'quoteCurrencySymbol')
             base = self.safe_currency_code(baseId)
             quote = self.safe_currency_code(quoteId)
-            pricePrecision = self.safe_integer(market, 'precision', 8)
             status = self.safe_string(market, 'status')
             result.append({
                 'id': self.safe_string(market, 'symbol'),
@@ -343,9 +343,13 @@ class bittrex(Exchange):
                 'optionType': None,
                 'precision': {
                     'amount': int('8'),
-                    'price': pricePrecision,
+                    'price': self.safe_integer(market, 'precision', 8),
                 },
                 'limits': {
+                    'leverage': {
+                        'min': None,
+                        'max': None,
+                    },
                     'amount': {
                         'min': self.safe_number(market, 'minTradeSize'),
                         'max': None,
@@ -355,10 +359,6 @@ class bittrex(Exchange):
                         'max': None,
                     },
                     'cost': {
-                        'min': None,
-                        'max': None,
-                    },
-                    'leverage': {
                         'min': None,
                         'max': None,
                     },

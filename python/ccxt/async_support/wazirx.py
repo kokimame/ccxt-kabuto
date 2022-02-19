@@ -76,6 +76,7 @@ class wazirx(Exchange):
                 'www': 'https://wazirx.com',
                 'doc': 'https://docs.wazirx.com/#public-rest-api-for-wazirx',
                 'fees': 'https://wazirx.com/fees',
+                'referral': 'https://wazirx.com/invite/k7rrnks5',
             },
             'api': {
                 'public': {
@@ -98,6 +99,7 @@ class wazirx(Exchange):
                         'historicalTrades': 1,
                         'openOrders': 1,
                         'order': 1,
+                        'myTrades': 1,
                     },
                     'post': {
                         'order': 1,
@@ -203,16 +205,16 @@ class wazirx(Exchange):
                 'contract': False,
                 'linear': None,
                 'inverse': None,
-                'maker': self.parse_number(makerString),
                 'taker': self.parse_number(takerString),
+                'maker': self.parse_number(makerString),
                 'contractSize': None,
                 'expiry': None,
                 'expiryDatetime': None,
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_integer(entry, 'quoteAssetPrecision'),
                     'amount': self.safe_integer(entry, 'baseAssetPrecision'),
+                    'price': self.safe_integer(entry, 'quoteAssetPrecision'),
                 },
                 'limits': {
                     'leverage': {
@@ -347,11 +349,9 @@ class wazirx(Exchange):
         #     }
         #
         id = self.safe_string(trade, 'id')
-        timestamp = self.parse8601(self.safe_string(trade, 'time'))
+        timestamp = self.safe_integer(trade, 'time')
         datetime = self.iso8601(timestamp)
-        symbol = None
-        if market is not None:
-            symbol = market['symbol']
+        market = self.safe_market(None, market)
         isBuyerMaker = self.safe_value(trade, 'isBuyerMaker')
         side = 'sell' if isBuyerMaker else 'buy'
         price = self.safe_number(trade, 'price')
@@ -362,7 +362,7 @@ class wazirx(Exchange):
             'id': id,
             'timestamp': timestamp,
             'datetime': datetime,
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'order': id,
             'type': None,
             'side': side,
@@ -371,7 +371,7 @@ class wazirx(Exchange):
             'amount': amount,
             'cost': cost,
             'fee': None,
-        })
+        }, market)
 
     async def fetch_status(self, params={}):
         response = await self.publicGetSystemStatus(params)

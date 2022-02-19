@@ -39,11 +39,11 @@ module.exports = class okx extends Exchange {
                 'fetchBalance': true,
                 'fetchBidsAsks': undefined,
                 'fetchBorrowRate': true,
-                'fetchBorrowRateHistories': undefined,
-                'fetchBorrowRateHistory': undefined,
+                'fetchBorrowRateHistories': true,
+                'fetchBorrowRateHistory': true,
                 'fetchBorrowRates': true,
                 'fetchBorrowRatesPerSymbol': false,
-                'fetchCanceledOrders': undefined,
+                'fetchCanceledOrders': true,
                 'fetchClosedOrder': undefined,
                 'fetchClosedOrders': true,
                 'fetchCurrencies': true,
@@ -64,6 +64,7 @@ module.exports = class okx extends Exchange {
                 'fetchLedger': true,
                 'fetchLedgerEntry': undefined,
                 'fetchLeverage': true,
+                'fetchLeverageTiers': true,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': true,
                 'fetchMyBuys': undefined,
@@ -826,11 +827,10 @@ module.exports = class okx extends Exchange {
         if (contract) {
             symbol = symbol + ':' + settle;
             expiry = this.safeInteger (market, 'expTime');
-            if (expiry !== undefined) {
+            if (futures) {
                 const ymd = this.yymmdd (expiry);
                 symbol = symbol + '-' + ymd;
-            }
-            if (option) {
+            } else if (option) {
                 strikePrice = this.safeString (market, 'stk');
                 optionType = this.safeString (market, 'optType');
                 symbol = symbol + '-' + strikePrice + '-' + optionType;
@@ -872,8 +872,8 @@ module.exports = class okx extends Exchange {
             'strike': strikePrice,
             'optionType': optionType,
             'precision': {
-                'price': precisionPrice,
                 'amount': this.safeNumber (market, 'lotSz'),
+                'price': precisionPrice,
             },
             'limits': {
                 'leverage': {
@@ -966,9 +966,11 @@ module.exports = class okx extends Exchange {
         if (!this.checkRequiredCredentials (false)) {
             return undefined;
         }
-        // has['fetchCurrencies'] is currently set to false
-        // it will reply with {"msg":"Request header “OK_ACCESS_KEY“ can't be empty.","code":"50103"}
-        // if you attempt to access it without authentication
+        //
+        // has['fetchCurrencies'] is currently set to true, but an unauthorized request returns
+        //
+        //     {"msg":"Request header “OK_ACCESS_KEY“ can't be empty.","code":"50103"}
+        //
         const response = await this.privateGetAssetCurrencies (params);
         //
         //     {
@@ -2227,6 +2229,88 @@ module.exports = class okx extends Exchange {
         return this.parseOrders (data, market, since, limit);
     }
 
+    async fetchCanceledOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const defaultType = this.safeString (this.options, 'defaultType');
+        const options = this.safeValue (this.options, 'fetchCanceledOrders', {});
+        let type = this.safeString (options, 'type', defaultType);
+        type = this.safeString (params, 'type', type);
+        params = this.omit (params, 'type');
+        const request = {
+            // 'instType': type.toUpperCase (), // SPOT, MARGIN, SWAP, FUTURES, OPTION
+            // 'uly': currency['id'],
+            // 'instId': market['id'],
+            // 'ordType': 'limit', // market, limit, post_only, fok, ioc, comma-separated
+            // 'state': 'filled', // filled, canceled
+            // 'after': orderId,
+            // 'before': orderId,
+            // 'limit': limit, // default 100, max 100
+        };
+        let market = undefined;
+        if (symbol !== undefined) {
+            market = this.market (symbol);
+            if (market['futures'] || market['swap']) {
+                type = market['type'];
+            }
+            request['instId'] = market['id'];
+        }
+        request['instType'] = type.toUpperCase ();
+        if (limit !== undefined) {
+            request['limit'] = limit; // default 100, max 100
+        }
+        request['state'] = 'canceled';
+        const method = this.safeString (options, 'method', 'privateGetTradeOrdersHistory');
+        const response = await this[method] (this.extend (request, params));
+        //
+        //     {
+        //         "code": "0",
+        //         "data": [
+        //             {
+        //                 "accFillSz": "0",
+        //                 "avgPx": "",
+        //                 "cTime": "1644037822494",
+        //                 "category": "normal",
+        //                 "ccy": "",
+        //                 "clOrdId": "",
+        //                 "fee": "0",
+        //                 "feeCcy": "BTC",
+        //                 "fillPx": "",
+        //                 "fillSz": "0",
+        //                 "fillTime": "",
+        //                 "instId": "BTC-USDT",
+        //                 "instType": "SPOT",
+        //                 "lever": "",
+        //                 "ordId": "410059580352409602",
+        //                 "ordType": "limit",
+        //                 "pnl": "0",
+        //                 "posSide": "net",
+        //                 "px": "30000",
+        //                 "rebate": "0",
+        //                 "rebateCcy": "USDT",
+        //                 "side": "buy",
+        //                 "slOrdPx": "",
+        //                 "slTriggerPx": "",
+        //                 "slTriggerPxType": "",
+        //                 "source": "",
+        //                 "state": "canceled",
+        //                 "sz": "0.0005452",
+        //                 "tag": "",
+        //                 "tdMode": "cash",
+        //                 "tgtCcy": "",
+        //                 "tpOrdPx": "",
+        //                 "tpTriggerPx": "",
+        //                 "tpTriggerPxType": "",
+        //                 "tradeId": "",
+        //                 "uTime": "1644038165667"
+        //             }
+        //         ],
+        //         "msg": ""
+        //     }
+        //
+        const data = this.safeValue (response, 'data', []);
+        return this.parseOrders (data, market, since, limit);
+    }
+
     async fetchClosedOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
         const defaultType = this.safeString (this.options, 'defaultType');
@@ -2256,6 +2340,7 @@ module.exports = class okx extends Exchange {
         if (limit !== undefined) {
             request['limit'] = limit; // default 100, max 100
         }
+        request['state'] = 'filled';
         const method = this.safeString (options, 'method', 'privateGetTradeOrdersHistory');
         const response = await this[method] (this.extend (request, params));
         //
@@ -3023,7 +3108,7 @@ module.exports = class okx extends Exchange {
         const marginMode = this.safeStringLower (params, 'mgnMode');
         params = this.omit (params, [ 'mgnMode' ]);
         if ((marginMode !== 'cross') && (marginMode !== 'isolated')) {
-            throw new BadRequest (this.id + ' fetchLeverage params["mgnMode"] must be either cross or isolated');
+            throw new BadRequest (this.id + ' fetchLeverage() requires a mgnMode parameter that must be either cross or isolated');
         }
         const market = this.market (symbol);
         const request = {
@@ -3251,10 +3336,12 @@ module.exports = class okx extends Exchange {
                 }
             }
         }
+        const contractSize = this.safeValue (market, 'contractSize');
+        const contractSizeString = this.numberToString (contractSize);
         const markPriceString = this.safeString (position, 'markPx');
         let notionalString = this.safeString (position, 'notionalUsd');
         if (market['inverse']) {
-            notionalString = Precise.stringDiv (notionalString, markPriceString);
+            notionalString = Precise.stringDiv (Precise.stringMul (contractsAbs, contractSizeString), markPriceString);
         }
         const notional = this.parseNumber (notionalString);
         const marginType = this.safeString (position, 'mgnMode');
@@ -3296,7 +3383,7 @@ module.exports = class okx extends Exchange {
             'unrealizedPnl': this.parseNumber (unrealizedPnlString),
             'percentage': percentage,
             'contracts': contracts,
-            'contractSize': this.safeValue (market, 'contractSize'),
+            'contractSize': contractSize,
             'markPrice': this.parseNumber (markPriceString),
             'side': side,
             'hedged': hedged,
@@ -3788,52 +3875,6 @@ module.exports = class okx extends Exchange {
         return response;
     }
 
-    async modifyMarginHelper (symbol, amount, type, params = {}) {
-        await this.loadMarkets ();
-        const market = this.market (symbol);
-        const posSide = this.safeString (params, 'posSide', 'net');
-        params = this.omit (params, [ 'posSide' ]);
-        const request = {
-            'instId': market['id'],
-            'amt': amount,
-            'type': type,
-            'posSide': posSide,
-        };
-        const response = await this.privatePostAccountPositionMarginBalance (this.extend (request, params));
-        //
-        //     {
-        //       "code": "0",
-        //       "data": [
-        //         {
-        //           "amt": "0.01",
-        //           "instId": "ETH-USD-SWAP",
-        //           "posSide": "net",
-        //           "type": "reduce"
-        //         }
-        //       ],
-        //       "msg": ""
-        //     }
-        //
-        const data = this.safeValue (response, 'data', []);
-        const entry = this.safeValue (data, 0, {});
-        const errorCode = this.safeString (response, 'code');
-        const status = (errorCode === '0') ? 'ok' : 'failed';
-        const responseAmount = this.safeNumber (entry, 'amt');
-        const responseType = this.safeString (entry, 'type');
-        const marketId = this.safeString (entry, 'instId');
-        const responseMarket = this.safeMarket (marketId, market);
-        const code = responseMarket['inverse'] ? responseMarket['base'] : responseMarket['quote'];
-        symbol = responseMarket['symbol'];
-        return {
-            'info': response,
-            'type': responseType,
-            'amount': responseAmount,
-            'code': code,
-            'symbol': symbol,
-            'status': status,
-        };
-    }
-
     async fetchBorrowRates (params = {}) {
         await this.loadMarkets ();
         const response = await this.privateGetAccountInterestRate (params);
@@ -3896,6 +3937,117 @@ module.exports = class okx extends Exchange {
         };
     }
 
+    async fetchBorrowRateHistories (since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const request = {
+            // 'ccy': currency['id'],
+            // 'after': this.milliseconds (), // Pagination of data to return records earlier than the requested ts,
+            // 'before': since, // Pagination of data to return records newer than the requested ts,
+            // 'limit': limit, // default is 100 and maximum is 100
+        };
+        if (since !== undefined) {
+            request['before'] = since;
+        }
+        if (limit !== undefined) {
+            request['limit'] = limit;
+        }
+        const response = await this.publicGetAssetLendingRateHistory (this.extend (request, params));
+        //
+        //     {
+        //         "code": "0",
+        //         "data": [
+        //             {
+        //                 "amt": "992.10341195",
+        //                 "ccy": "BTC",
+        //                 "rate": "0.01",
+        //                 "ts": "1643954400000"
+        //             },
+        //         ],
+        //         "msg": ""
+        //     }
+        //
+        const data = this.safeValue (response, 'data');
+        const borrowRateHistories = {};
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            const currency = this.safeCurrencyCode (this.safeString (item, 'ccy'));
+            if (!(currency in borrowRateHistories)) {
+                borrowRateHistories[currency] = [];
+            }
+            const rate = this.safeString (item, 'rate');
+            const timestamp = this.safeString (item, 'ts');
+            borrowRateHistories[currency].push ({
+                'info': item,
+                'currency': currency,
+                'rate': rate,
+                'timestamp': timestamp,
+                'datetime': this.iso8601 (timestamp),
+            });
+        }
+        const keys = Object.keys (borrowRateHistories);
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            borrowRateHistories[key] = this.filterByCurrencySinceLimit (borrowRateHistories[key], key, since, limit);
+        }
+        return borrowRateHistories;
+    }
+
+    async fetchBorrowRateHistory (code, since = undefined, limit = undefined, params = {}) {
+        const codeObject = JSON.parse ('{"ccy": "' + code + '"}');
+        const histories = await this.fetchBorrowRateHistories (since, limit, codeObject, params);
+        if (histories === undefined) {
+            throw new BadRequest (this.id + '.fetchBorrowRateHistory returned no data for ' + code);
+        } else {
+            return histories;
+        }
+    }
+
+    async modifyMarginHelper (symbol, amount, type, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const posSide = this.safeString (params, 'posSide', 'net');
+        params = this.omit (params, [ 'posSide' ]);
+        const request = {
+            'instId': market['id'],
+            'amt': amount,
+            'type': type,
+            'posSide': posSide,
+        };
+        const response = await this.privatePostAccountPositionMarginBalance (this.extend (request, params));
+        //
+        //     {
+        //       "code": "0",
+        //       "data": [
+        //         {
+        //           "amt": "0.01",
+        //           "instId": "ETH-USD-SWAP",
+        //           "posSide": "net",
+        //           "type": "reduce"
+        //         }
+        //       ],
+        //       "msg": ""
+        //     }
+        //
+        const data = this.safeValue (response, 'data', []);
+        const entry = this.safeValue (data, 0, {});
+        const errorCode = this.safeString (response, 'code');
+        const status = (errorCode === '0') ? 'ok' : 'failed';
+        const responseAmount = this.safeNumber (entry, 'amt');
+        const responseType = this.safeString (entry, 'type');
+        const marketId = this.safeString (entry, 'instId');
+        const responseMarket = this.safeMarket (marketId, market);
+        const code = responseMarket['inverse'] ? responseMarket['base'] : responseMarket['quote'];
+        symbol = responseMarket['symbol'];
+        return {
+            'info': response,
+            'type': responseType,
+            'amount': responseAmount,
+            'code': code,
+            'symbol': symbol,
+            'status': status,
+        };
+    }
+
     async reduceMargin (symbol, amount, params = {}) {
         return await this.modifyMarginHelper (symbol, amount, 'reduce', params);
     }
@@ -3904,7 +4056,68 @@ module.exports = class okx extends Exchange {
         return await this.modifyMarginHelper (symbol, amount, 'add', params);
     }
 
+    async fetchLeverageTiers (symbol = undefined, params = {}) {
+        await this.loadMarkets ();
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchLeverageTiers() requires a symbol argument');
+        }
+        const market = this.market (symbol);
+        const type = market['spot'] ? 'MARGIN' : market['type'].toUpperCase ();
+        const uly = this.safeString (market['info'], 'uly');
+        if (!uly) {
+            throw new BadRequest (this.id + ' fetchLeverageTiers() cannot fetch leverage tiers for ' + symbol);
+        }
+        const request = {
+            'instType': type,
+            'tdMode': this.safeString (params, 'tdMode', 'isolated'),
+            'uly': uly,
+        };
+        if (type === 'MARGIN') {
+            request['instId'] = market['id'];
+        }
+        const response = await this.publicGetPublicPositionTiers (this.extend (request, params));
+        //
+        //    {
+        //        "code": "0",
+        //        "data": [
+        //            {
+        //                "baseMaxLoan": "500",
+        //                "imr": "0.1",
+        //                "instId": "ETH-USDT",
+        //                "maxLever": "10",
+        //                "maxSz": "500",
+        //                "minSz": "0",
+        //                "mmr": "0.03",
+        //                "optMgnFactor": "0",
+        //                "quoteMaxLoan": "200000",
+        //                "tier": "1",
+        //                "uly": ""
+        //            },
+        //            ...
+        //        ]
+        //    }
+        //
+        const data = this.safeValue (response, 'data');
+        const brackets = [];
+        for (let i = 0; i < data.length; i++) {
+            const tier = data[i];
+            brackets.push ({
+                'tier': this.safeInteger (tier, 'tier'),
+                'notionalCurrency': market['quote'],
+                'notionalFloor': this.safeNumber (tier, 'minSz'),
+                'notionalCap': this.safeNumber (tier, 'maxSz'),
+                'maintenanceMarginRate': this.safeNumber (tier, 'mmr'),
+                'maxLeverage': this.safeNumber (tier, 'maxLever'),
+                'info': tier,
+            });
+        }
+        const result = {};
+        result[symbol] = brackets;
+        return result;
+    }
+
     setSandboxMode (enable) {
+        super.setSandboxMode (enable);
         if (enable) {
             this.headers['x-simulated-trading'] = '1';
         } else if ('x-simulated-trading' in this.headers) {

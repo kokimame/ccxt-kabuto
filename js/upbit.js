@@ -4,7 +4,6 @@
 
 const Exchange = require ('./base/Exchange');
 const { ExchangeError, BadRequest, AuthenticationError, InvalidOrder, InsufficientFunds, OrderNotFound, PermissionDenied, AddressPending } = require ('./base/errors');
-const Precise = require ('./base/Precise');
 
 //  ---------------------------------------------------------------------------
 
@@ -328,7 +327,6 @@ module.exports = class upbit extends Exchange {
         const askFee = this.safeNumber (response, 'ask_fee');
         const fee = Math.max (bidFee, askFee);
         return {
-            'info': response,
             'id': marketId,
             'symbol': base + '/' + quote,
             'base': base,
@@ -355,8 +353,8 @@ module.exports = class upbit extends Exchange {
             'strike': undefined,
             'optionType': undefined,
             'precision': {
-                'price': 8,
-                'amount': 8,
+                'amount': parseInt ('8'),
+                'price': parseInt ('8'),
             },
             'limits': {
                 'leverage': {
@@ -375,6 +373,7 @@ module.exports = class upbit extends Exchange {
                     'min': this.safeNumber (bid, 'min_total'),
                     'max': this.safeNumber (marketInfo, 'max_total'),
                 },
+                'info': response,
             },
         };
     }
@@ -382,22 +381,14 @@ module.exports = class upbit extends Exchange {
     async fetchMarkets (params = {}) {
         const response = await this.publicGetMarketAll (params);
         //
-        //     [ {       market: "KRW-BTC",
-        //          korean_name: "비트코인",
-        //         english_name: "Bitcoin"  },
-        //       {       market: "KRW-DASH",
-        //          korean_name: "대시",
-        //         english_name: "Dash"      },
-        //       {       market: "KRW-ETH",
-        //          korean_name: "이더리움",
-        //         english_name: "Ethereum" },
-        //       {       market: "BTC-ETH",
-        //          korean_name: "이더리움",
-        //         english_name: "Ethereum" },
-        //       ...,
-        //       {       market: "BTC-BSV",
-        //          korean_name: "비트코인에스브이",
-        //         english_name: "Bitcoin SV" } ]
+        //    [
+        //        {
+        //            market: "KRW-BTC",
+        //            korean_name: "비트코인",
+        //            english_name: "Bitcoin"
+        //        },
+        //        ...,
+        //    ]
         //
         const result = [];
         for (let i = 0; i < response.length; i++) {
@@ -724,43 +715,26 @@ module.exports = class upbit extends Exchange {
         } else if (askOrBid === 'bid') {
             side = 'buy';
         }
-        let cost = this.safeNumber (trade, 'funds');
-        const priceString = this.safeString2 (trade, 'trade_price', 'price');
-        const amountString = this.safeString2 (trade, 'trade_volume', 'volume');
-        const price = this.parseNumber (priceString);
-        const amount = this.parseNumber (amountString);
-        if (cost === undefined) {
-            cost = this.parseNumber (Precise.stringMul (priceString, amountString));
-        }
+        const cost = this.safeString (trade, 'funds');
+        const price = this.safeString2 (trade, 'trade_price', 'price');
+        const amount = this.safeString2 (trade, 'trade_volume', 'volume');
         const marketId = this.safeString2 (trade, 'market', 'code');
-        market = this.safeMarket (marketId, market);
+        market = this.safeMarket (marketId, market, '-');
         let fee = undefined;
-        let feeCurrency = undefined;
-        let symbol = undefined;
-        if (market !== undefined) {
-            symbol = market['symbol'];
-            feeCurrency = market['quote'];
-        } else {
-            const [ baseId, quoteId ] = marketId.split ('-');
-            const base = this.safeCurrencyCode (baseId);
-            const quote = this.safeCurrencyCode (quoteId);
-            symbol = base + '/' + quote;
-            feeCurrency = quote;
-        }
         const feeCost = this.safeString (trade, askOrBid + '_fee');
         if (feeCost !== undefined) {
             fee = {
-                'currency': feeCurrency,
+                'currency': market['quote'],
                 'cost': feeCost,
             };
         }
-        return {
+        return this.safeTrade ({
             'id': id,
             'info': trade,
             'order': orderId,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': undefined,
             'side': side,
             'takerOrMaker': undefined,
@@ -768,7 +742,7 @@ module.exports = class upbit extends Exchange {
             'amount': amount,
             'cost': cost,
             'fee': fee,
-        };
+        }, market);
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {

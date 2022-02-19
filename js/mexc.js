@@ -45,6 +45,7 @@ module.exports = class mexc extends Exchange {
                 'fetchIndexOHLCV': true,
                 'fetchIsolatedPositions': undefined,
                 'fetchLeverage': undefined,
+                'fetchLeverageTiers': true,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': true,
                 'fetchMyTrades': true,
@@ -557,8 +558,8 @@ module.exports = class mexc extends Exchange {
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': this.safeNumber (market, 'priceUnit'),
                     'amount': this.safeNumber (market, 'volUnit'),
+                    'price': this.safeNumber (market, 'priceUnit'),
                 },
                 'limits': {
                     'leverage': {
@@ -647,8 +648,8 @@ module.exports = class mexc extends Exchange {
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': this.parseNumber (this.parsePrecision (priceScale)),
                     'amount': this.parseNumber (this.parsePrecision (quantityScale)),
+                    'price': this.parseNumber (this.parsePrecision (priceScale)),
                 },
                 'limits': {
                     'leverage': {
@@ -1548,7 +1549,7 @@ module.exports = class mexc extends Exchange {
         };
         const response = await this.fetchPositions (this.extend (request, params));
         const firstPosition = this.safeValue (response, 0);
-        return firstPosition;
+        return this.parsePosition (firstPosition, market);
     }
 
     async fetchPositions (symbols = undefined, params = {}) {
@@ -1584,9 +1585,78 @@ module.exports = class mexc extends Exchange {
         //         ]
         //     }
         //
-        // todo add parsePositions, parsePosition
         const data = this.safeValue (response, 'data', []);
-        return data;
+        return this.parsePositions (data);
+    }
+
+    parsePosition (position, market = undefined) {
+        //
+        //     {
+        //         "positionId": 1394650,
+        //         "symbol": "ETH_USDT",
+        //         "positionType": 1,
+        //         "openType": 1,
+        //         "state": 1,
+        //         "holdVol": 1,
+        //         "frozenVol": 0,
+        //         "closeVol": 0,
+        //         "holdAvgPrice": 1217.3,
+        //         "openAvgPrice": 1217.3,
+        //         "closeAvgPrice": 0,
+        //         "liquidatePrice": 1211.2,
+        //         "oim": 0.1290338,
+        //         "im": 0.1290338,
+        //         "holdFee": 0,
+        //         "realised": -0.0073,
+        //         "leverage": 100,
+        //         "createTime": 1609991676000,
+        //         "updateTime": 1609991676000,
+        //         "autoAddIm": false
+        //     }
+        //
+        market = this.safeMarket (this.safeString (position, 'symbol'), market);
+        const symbol = market['symbol'];
+        const contracts = this.safeString (position, 'holdVol');
+        const entryPrice = this.safeNumber (position, 'openAvgPrice');
+        const initialMargin = this.safeString (position, 'im');
+        const rawSide = this.safeString (position, 'positionType');
+        const side = (rawSide === '1') ? 'long' : 'short';
+        const openType = this.safeString (position, 'margin_mode');
+        const marginType = (openType === '1') ? 'isolated' : 'cross';
+        const leverage = this.safeString (position, 'leverage');
+        const liquidationPrice = this.safeNumber (position, 'liquidatePrice');
+        const timestamp = this.safeNumber (position, 'updateTime');
+        return {
+            'info': position,
+            'symbol': symbol,
+            'contracts': this.parseNumber (contracts),
+            'contractSize': undefined,
+            'entryPrice': entryPrice,
+            'collateral': undefined,
+            'side': side,
+            'unrealizedProfit': undefined,
+            'leverage': this.parseNumber (leverage),
+            'percentage': undefined,
+            'marginType': marginType,
+            'notional': undefined,
+            'markPrice': undefined,
+            'liquidationPrice': liquidationPrice,
+            'initialMargin': this.parseNumber (initialMargin),
+            'initialMarginPercentage': undefined,
+            'maintenanceMargin': undefined,
+            'maintenanceMarginPercentage': undefined,
+            'marginRatio': undefined,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+        };
+    }
+
+    parsePositions (positions) {
+        const result = [];
+        for (let i = 0; i < positions.length; i++) {
+            result.push (this.parsePosition (positions[i]));
+        }
+        return result;
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
@@ -2388,5 +2458,96 @@ module.exports = class mexc extends Exchange {
         }
         const sorted = this.sortBy (rates, 'timestamp');
         return this.filterBySymbolSinceLimit (sorted, symbol, since, limit);
+    }
+
+    async fetchLeverageTiers (symbol = undefined, params = {}) {
+        await this.loadMarkets ();
+        const symbolDefined = (symbol !== undefined);
+        let market = undefined;
+        if (symbolDefined) {
+            market = this.market (symbol);
+            if (!market['contract']) {
+                throw new BadRequest (this.id + ' fetchLeverageTiers() supports contract markets only');
+            }
+        }
+        const response = await this.contractPublicGetDetail (params);
+        //
+        //     {
+        //         "success":true,
+        //         "code":0,
+        //         "data":[
+        //             {
+        //                 "symbol":"BTC_USDT",
+        //                 "displayName":"BTC_USDT永续",
+        //                 "displayNameEn":"BTC_USDT SWAP",
+        //                 "positionOpenType":3,
+        //                 "baseCoin":"BTC",
+        //                 "quoteCoin":"USDT",
+        //                 "settleCoin":"USDT",
+        //                 "contractSize":0.0001,
+        //                 "minLeverage":1,
+        //                 "maxLeverage":125,
+        //                 "priceScale":2,
+        //                 "volScale":0,
+        //                 "amountScale":4,
+        //                 "priceUnit":0.5,
+        //                 "volUnit":1,
+        //                 "minVol":1,
+        //                 "maxVol":1000000,
+        //                 "bidLimitPriceRate":0.1,
+        //                 "askLimitPriceRate":0.1,
+        //                 "takerFeeRate":0.0006,
+        //                 "makerFeeRate":0.0002,
+        //                 "maintenanceMarginRate":0.004,
+        //                 "initialMarginRate":0.008,
+        //                 "riskBaseVol":10000,
+        //                 "riskIncrVol":200000,
+        //                 "riskIncrMmr":0.004,
+        //                 "riskIncrImr":0.004,
+        //                 "riskLevelLimit":5,
+        //                 "priceCoefficientVariation":0.1,
+        //                 "indexOrigin":["BINANCE","GATEIO","HUOBI","MXC"],
+        //                 "state":0, // 0 enabled, 1 delivery, 2 completed, 3 offline, 4 pause
+        //                 "isNew":false,
+        //                 "isHot":true,
+        //                 "isHidden":false
+        //             },
+        //             ...
+        //         ]
+        //     }
+        //
+        const result = {};
+        const data = this.safeValue (response, 'data');
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            let maintenanceMarginRate = this.safeString (item, 'maintenanceMarginRate');
+            let initialMarginRate = this.safeString (item, 'initialMarginRate');
+            const maxVol = this.safeString (item, 'maxVol');
+            const riskIncrVol = this.safeString (item, 'riskIncrVol');
+            const riskIncrMmr = this.safeString (item, 'riskIncrMmr');
+            const riskIncrImr = this.safeString (item, 'riskIncrImr');
+            let floor = '0';
+            const tiers = [];
+            const quoteId = this.safeString (item, 'quoteCoin');
+            while (Precise.stringLt (floor, maxVol)) {
+                const cap = Precise.stringAdd (floor, riskIncrVol);
+                tiers.push ({
+                    'tier': this.parseNumber (Precise.stringDiv (cap, riskIncrVol)),
+                    'notionalCurrency': this.safeCurrencyCode (quoteId),
+                    'notionalFloor': this.parseNumber (floor),
+                    'notionalCap': this.parseNumber (cap),
+                    'maintenanceMarginRate': this.parseNumber (maintenanceMarginRate),
+                    'maxLeverage': this.parseNumber (Precise.stringDiv ('1', initialMarginRate)),
+                    'info': item,
+                });
+                initialMarginRate = Precise.stringAdd (initialMarginRate, riskIncrImr);
+                maintenanceMarginRate = Precise.stringAdd (maintenanceMarginRate, riskIncrMmr);
+                floor = cap;
+            }
+            const id = this.safeString (item, 'symbol');
+            const ccxtSymbol = this.safeSymbol (id);
+            result[ccxtSymbol] = tiers;
+        }
+        return symbolDefined ? this.safeValue (result, symbol) : result;
     }
 };

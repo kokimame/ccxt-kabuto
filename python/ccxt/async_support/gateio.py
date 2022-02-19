@@ -572,8 +572,8 @@ class gateio(Exchange):
                     'ORDER_POC_IMMEDIATE': InvalidOrder,
                     'INCREASE_POSITION': InvalidOrder,
                     'CONTRACT_IN_DELISTING': ExchangeError,
-                    'INTERNAL': ExchangeError,
-                    'SERVER_ERROR': ExchangeError,
+                    'INTERNAL': ExchangeNotAvailable,
+                    'SERVER_ERROR': ExchangeNotAvailable,
                     'TOO_BUSY': ExchangeNotAvailable,
                 },
             },
@@ -745,8 +745,8 @@ class gateio(Exchange):
                         'strike': None,
                         'optionType': None,
                         'precision': {
-                            'price': self.safe_number(market, 'order_price_round'),
                             'amount': self.parse_number('1'),
+                            'price': self.safe_number(market, 'order_price_round'),
                         },
                         'limits': {
                             'leverage': {
@@ -839,8 +839,8 @@ class gateio(Exchange):
                     'strike': None,
                     'optionType': None,
                     'precision': {
-                        'price': self.parse_number(self.parse_precision(pricePrecisionString)),
                         'amount': self.parse_number(self.parse_precision(amountPrecisionString)),
+                        'price': self.parse_number(self.parse_precision(pricePrecisionString)),
                     },
                     'limits': {
                         'leverage': {
@@ -1967,8 +1967,9 @@ class gateio(Exchange):
         if limit is not None:
             request['limit'] = limit
         if since is not None:
-            request['from'] = int(since / 1000)
-            request['to'] = since + 30 * 24 * 60 * 60
+            start = int(since / 1000)
+            request['from'] = start
+            request['to'] = self.sum(start, 30 * 24 * 60 * 60)
         response = await self.privateWalletGetDeposits(self.extend(request, params))
         return self.parse_transactions(response, currency)
 
@@ -1982,8 +1983,9 @@ class gateio(Exchange):
         if limit is not None:
             request['limit'] = limit
         if since is not None:
-            request['from'] = int(since / 1000)
-            request['to'] = since + 30 * 24 * 60 * 60
+            start = int(since / 1000)
+            request['from'] = start
+            request['to'] = self.sum(start, 30 * 24 * 60 * 60)
         response = await self.privateWalletGetWithdrawals(self.extend(request, params))
         return self.parse_transactions(response, currency)
 
@@ -2033,6 +2035,7 @@ class gateio(Exchange):
             'DMOVE': 'pending',
             'CANCEL': 'failed',
             'DONE': 'ok',
+            'BCODE': 'ok',  # GateCode withdrawal
         }
         return self.safe_string(statuses, status, status)
 
@@ -2061,11 +2064,15 @@ class gateio(Exchange):
         # withdrawals
         id = self.safe_string(transaction, 'id')
         type = None
-        if id is not None:
+        amount = self.safe_string(transaction, 'amount')
+        if id[0] == 'b':
+            # GateCode handling
+            type = 'deposit' if Precise.string_gt(amount, '0') else 'withdrawal'
+            amount = Precise.string_abs(amount)
+        elif id is not None:
             type = self.parse_transaction_type(id[0])
         currencyId = self.safe_string(transaction, 'currency')
         code = self.safe_currency_code(currencyId)
-        amount = self.safe_number(transaction, 'amount')
         txid = self.safe_string(transaction, 'txid')
         rawStatus = self.safe_string(transaction, 'status')
         status = self.parse_transaction_status(rawStatus)
@@ -2080,7 +2087,7 @@ class gateio(Exchange):
             'id': id,
             'txid': txid,
             'currency': code,
-            'amount': amount,
+            'amount': self.parse_number(amount),
             'network': None,
             'address': address,
             'addressTo': None,
@@ -2532,7 +2539,7 @@ class gateio(Exchange):
         if limit is not None:
             request['limit'] = limit
         if since is not None and (market['spot'] or market['margin']):
-            request['start'] = int(since / 1000)
+            request['from'] = int(since / 1000)
         method = self.get_supported_mapping(market['type'], {
             'spot': 'privateSpotGetOrders',
             'margin': 'privateSpotGetOrders',

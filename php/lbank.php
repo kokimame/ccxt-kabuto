@@ -41,6 +41,7 @@ class lbank extends Exchange {
                 'fetchIndexOHLCV' => false,
                 'fetchIsolatedPositions' => false,
                 'fetchLeverage' => false,
+                'fetchLeverageTiers' => false,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchOHLCV' => true,
@@ -129,6 +130,17 @@ class lbank extends Exchange {
 
     public function fetch_markets($params = array ()) {
         $response = $this->publicGetAccuracy ($params);
+        //
+        //    array(
+        //        array(
+        //            "symbol" => "btc_usdt",
+        //            "quantityAccuracy" => "4",
+        //            "minTranQua" => "0.0001",
+        //            "priceAccuracy" => "2"
+        //        ),
+        //        ...
+        //    )
+        //
         $result = array();
         for ($i = 0; $i < count($response); $i++) {
             $market = $response[$i];
@@ -147,8 +159,6 @@ class lbank extends Exchange {
             }
             $base = $this->safe_currency_code($baseId);
             $quote = $this->safe_currency_code($quoteId);
-            $precisionPrice = $this->safe_string($market, 'priceAccuracy');
-            $precisionAmount = $this->safe_string($market, 'quantityAccuracy');
             $result[] = array(
                 'id' => $id,
                 'symbol' => $base . '/' . $quote,
@@ -174,8 +184,8 @@ class lbank extends Exchange {
                 'strike' => null,
                 'optionType' => null,
                 'precision' => array(
-                    'price' => $this->parse_number($precisionPrice),
-                    'amount' => $this->parse_number($precisionAmount),
+                    'amount' => $this->safe_integer($market, 'quantityAccuracy'),
+                    'price' => $this->safe_integer($market, 'priceAccuracy'),
                 ),
                 'limits' => array(
                     'leverage' => array(

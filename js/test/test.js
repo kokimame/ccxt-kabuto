@@ -226,7 +226,7 @@ async function testExchange (exchange) {
         'ZRX',
     ]
 
-    let code = codes[0]
+    let code = undefined
     for (let i = 0; i < codes.length; i++) {
         if (codes[i] in exchange.currencies) {
             code = codes[i]
@@ -303,6 +303,7 @@ async function testExchange (exchange) {
     await test ('fetchOpenOrders', exchange, symbol)
     await test ('fetchClosedOrders', exchange, symbol)
     await test ('fetchMyTrades', exchange, symbol)
+    await test ('fetchLeverageTiers', exchange, symbol)
 
     await test ('fetchPositions', exchange, symbol)
 

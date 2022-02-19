@@ -42,6 +42,7 @@ class bitbank extends Exchange {
                 'fetchIndexOHLCV' => false,
                 'fetchIsolatedPositions' => false,
                 'fetchLeverage' => false,
+                'fetchLeverageTiers' => false,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => true,
                 'fetchOHLCV' => true,
@@ -202,8 +203,8 @@ class bitbank extends Exchange {
                 'strike' => null,
                 'optionType' => null,
                 'precision' => array(
-                    'price' => $this->safe_integer($entry, 'price_digits'),
                     'amount' => $this->safe_integer($entry, 'amount_digits'),
+                    'price' => $this->safe_integer($entry, 'price_digits'),
                 ),
                 'limits' => array(
                     'leverage' => array(
@@ -281,12 +282,7 @@ class bitbank extends Exchange {
 
     public function parse_trade($trade, $market = null) {
         $timestamp = $this->safe_integer($trade, 'executed_at');
-        $symbol = null;
-        $feeCurrency = null;
-        if ($market !== null) {
-            $symbol = $market['symbol'];
-            $feeCurrency = $market['quote'];
-        }
+        $market = $this->safe_market(null, $market);
         $priceString = $this->safe_string($trade, 'price');
         $amountString = $this->safe_string($trade, 'amount');
         $id = $this->safe_string_2($trade, 'transaction_id', 'trade_id');
@@ -295,7 +291,7 @@ class bitbank extends Exchange {
         $feeCostString = $this->safe_string($trade, 'fee_amount_quote');
         if ($feeCostString !== null) {
             $fee = array(
-                'currency' => $feeCurrency,
+                'currency' => $market['quote'],
                 'cost' => $feeCostString,
             );
         }
@@ -305,7 +301,7 @@ class bitbank extends Exchange {
         return $this->safe_trade(array(
             'timestamp' => $timestamp,
             'datetime' => $this->iso8601($timestamp),
-            'symbol' => $symbol,
+            'symbol' => $market['symbol'],
             'id' => $id,
             'order' => $orderId,
             'type' => $type,
@@ -463,13 +459,7 @@ class bitbank extends Exchange {
     public function parse_order($order, $market = null) {
         $id = $this->safe_string($order, 'order_id');
         $marketId = $this->safe_string($order, 'pair');
-        $symbol = null;
-        if ($marketId && !$market && (is_array($this->markets_by_id) && array_key_exists($marketId, $this->markets_by_id))) {
-            $market = $this->markets_by_id[$marketId];
-        }
-        if ($market !== null) {
-            $symbol = $market['symbol'];
-        }
+        $market = $this->safe_market($marketId, $market);
         $timestamp = $this->safe_integer($order, 'ordered_at');
         $price = $this->safe_string($order, 'price');
         $amount = $this->safe_string($order, 'start_amount');
@@ -486,7 +476,7 @@ class bitbank extends Exchange {
             'timestamp' => $timestamp,
             'lastTradeTimestamp' => null,
             'status' => $status,
-            'symbol' => $symbol,
+            'symbol' => $market['symbol'],
             'type' => $type,
             'timeInForce' => null,
             'postOnly' => null,
@@ -565,13 +555,11 @@ class bitbank extends Exchange {
 
     public function fetch_my_trades($symbol = null, $since = null, $limit = null, $params = array ()) {
         $this->load_markets();
+        $request = array();
         $market = null;
         if ($symbol !== null) {
-            $market = $this->market($symbol);
-        }
-        $request = array();
-        if ($market !== null) {
             $request['pair'] = $market['id'];
+            $market = $this->market($symbol);
         }
         if ($limit !== null) {
             $request['count'] = $limit;

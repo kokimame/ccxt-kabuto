@@ -62,6 +62,7 @@ class kucoinfutures(kucoin):
                 'fetchIndexOHLCV': False,
                 'fetchL3OrderBook': True,
                 'fetchLedger': True,
+                'fetchLeverageTiers': True,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
@@ -112,6 +113,7 @@ class kucoinfutures(kucoin):
                     'get': {
                         'contracts/active': 1,
                         'contracts/{symbol}': 1,
+                        'contracts/risk-limit/{symbol}': 1,
                         'ticker': 1,
                         'level2/snapshot': 1.33,
                         'level2/depth{limit}': 1,
@@ -295,6 +297,10 @@ class kucoinfutures(kucoin):
                     'ERC20': 'eth',
                     'TRC20': 'trx',
                 },
+                # 'code': 'BTC',
+                # 'fetchBalance': {
+                #    'code': 'BTC',
+                # },
             },
         })
 
@@ -448,8 +454,8 @@ class kucoinfutures(kucoin):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_number(market, 'tickSize'),
                     'amount': self.safe_number(market, 'lotSize'),
+                    'price': self.safe_number(market, 'tickSize'),
                 },
                 'limits': {
                     'leverage': {
@@ -1100,10 +1106,11 @@ class kucoinfutures(kucoin):
         cost = Precise.string_div(rawCost, leverage)
         average = None
         if Precise.string_gt(filled, '0'):
+            contractSize = self.safe_string(market, 'contractSize')
             if market['linear']:
-                average = Precise.string_div(rawCost, Precise.string_mul(market['contractSize'], filled))
+                average = Precise.string_div(rawCost, Precise.string_mul(contractSize, filled))
             else:
-                average = Precise.string_div(Precise.string_mul(market['contractSize'], filled), rawCost)
+                average = Precise.string_div(Precise.string_mul(contractSize, filled), rawCost)
         # precision reported by their api is 8 d.p.
         # average = Precise.string_div(rawCost, Precise.string_mul(filled, market['contractSize']))
         # bool
@@ -1201,10 +1208,18 @@ class kucoinfutures(kucoin):
     def fetch_balance(self, params={}):
         self.load_markets()
         # only fetches one balance at a time
-        # by default it will only fetch the BTC balance of the futures account
-        # you can send 'currency' in params to fetch other currencies
-        # fetchBalance({'type': 'future', 'currency': 'USDT'})
-        response = self.futuresPrivateGetAccountOverview(params)
+        request = {}
+        coin = self.safe_string(params, 'coin')
+        defaultCode = self.safe_string(self.options, 'code')
+        fetchBalanceOptions = self.safe_value(self.options, 'fetchBalance', {})
+        defaultCode = self.safe_string(fetchBalanceOptions, 'code', defaultCode)
+        code = self.safe_string(params, 'code', defaultCode)
+        if coin is not None:
+            request['currency'] = coin
+        elif code is not None:
+            currency = self.currency(code)
+            request['currency'] = currency['id']
+        response = self.futuresPrivateGetAccountOverview(self.extend(request, params))
         #
         #     {
         #         code: '200000',
@@ -1375,6 +1390,30 @@ class kucoinfutures(kucoin):
         #         "createdAt":1547026472000
         #     }
         #
+        # fetchMyTrades(private) v1
+        #
+        #      {
+        #          "symbol":"DOGEUSDTM",
+        #          "tradeId":"620ec41a96bab27b5f4ced56",
+        #          "orderId":"620ec41a0d1d8a0001560bd0",
+        #          "side":"sell",
+        #          "liquidity":"taker",
+        #          "forceTaker":true,
+        #          "price":"0.13969",
+        #          "size":1,
+        #          "value":"13.969",
+        #          "feeRate":"0.0006",
+        #          "fixFee":"0",
+        #          "feeCurrency":"USDT",
+        #          "stop":"",
+        #          "tradeTime":1645134874858018058,
+        #          "fee":"0.0083814",
+        #          "settleCurrency":"USDT",
+        #          "orderType":"market",
+        #          "tradeType":"trade",
+        #          "createdAt":1645134874858
+        #      }
+        #
         marketId = self.safe_string(trade, 'symbol')
         symbol = self.safe_symbol(marketId, market, '-')
         id = self.safe_string_2(trade, 'tradeId', 'id')
@@ -1390,33 +1429,31 @@ class kucoinfutures(kucoin):
                 timestamp = timestamp * 1000
         priceString = self.safe_string_2(trade, 'price', 'dealPrice')
         amountString = self.safe_string_2(trade, 'size', 'amount')
-        price = self.parse_number(priceString)
-        amount = self.parse_number(amountString)
         side = self.safe_string(trade, 'side')
         fee = None
-        feeCost = self.safe_number(trade, 'fee')
-        if feeCost is not None:
+        feeCostString = self.safe_string(trade, 'fee')
+        if feeCostString is not None:
             feeCurrencyId = self.safe_string(trade, 'feeCurrency')
             feeCurrency = self.safe_currency_code(feeCurrencyId)
             if feeCurrency is None:
                 if market is not None:
                     feeCurrency = market['quote'] if (side == 'sell') else market['base']
             fee = {
-                'cost': feeCost,
+                'cost': feeCostString,
                 'currency': feeCurrency,
-                'rate': self.safe_number(trade, 'feeRate'),
+                'rate': self.safe_string(trade, 'feeRate'),
             }
         type = self.safe_string_2(trade, 'type', 'orderType')
         if type == 'match':
             type = None
-        cost = self.safe_number_2(trade, 'funds', 'dealValue')
-        if cost is None:
+        costString = self.safe_string_2(trade, 'funds', 'value')
+        if costString is None:
             market = self.market(symbol)
             contractSize = self.safe_string(market, 'contractSize')
             contractCost = Precise.string_mul(priceString, amountString)
             if contractSize and contractCost:
-                cost = self.parse_number(Precise.string_mul(contractCost, contractSize))
-        return {
+                costString = Precise.string_mul(contractCost, contractSize)
+        return self.safe_trade({
             'info': trade,
             'id': id,
             'order': orderId,
@@ -1426,11 +1463,11 @@ class kucoinfutures(kucoin):
             'type': type,
             'takerOrMaker': takerOrMaker,
             'side': side,
-            'price': price,
-            'amount': amount,
-            'cost': cost,
+            'price': priceString,
+            'amount': amountString,
+            'cost': costString,
             'fee': fee,
-        }
+        }, market)
 
     def fetch_deposits(self, code=None, since=None, limit=None, params={}):
         self.load_markets()
@@ -1521,3 +1558,50 @@ class kucoinfutures(kucoin):
 
     def fetch_ledger(self, code=None, since=None, limit=None, params={}):
         raise BadRequest(self.id + ' has no method fetchLedger')
+
+    def fetch_leverage_tiers(self, symbol=None, params={}):
+        self.load_markets()
+        if symbol is None:
+            raise ArgumentsRequired(self.id + ' fetchLeverageTiers() requires a symbol argument')
+        market = self.market(symbol)
+        if not market['contract']:
+            raise BadRequest(self.id + ' fetchLeverageTiers() supports contract markets only')
+        request = {
+            'symbol': market['id'],
+        }
+        response = self.futuresPublicGetContractsRiskLimitSymbol(self.extend(request, params))
+        #
+        #    {
+        #        "code": "200000",
+        #        "data": [
+        #            {
+        #                "symbol": "ETHUSDTM",
+        #                "level": 1,
+        #                "maxRiskLimit": 300000,
+        #                "minRiskLimit": 0,
+        #                "maxLeverage": 100,
+        #                "initialMargin": 0.0100000000,
+        #                "maintainMargin": 0.0050000000
+        #            },
+        #            ...
+        #        ]
+        #    }
+        #
+        data = self.safe_value(response, 'data')
+        tiers = {}
+        for i in range(0, len(data)):
+            tier = data[i]
+            symbol = self.safe_symbol(self.safe_string(tier, 'symbol'))
+            if not (symbol in tiers):
+                tiers[symbol] = []
+            market = self.market(symbol)
+            tiers[symbol].append({
+                'tier': self.safe_number(tier, 'level'),
+                'notionalCurrency': market['base'],
+                'notionalFloor': self.safe_number(tier, 'minRiskLimit'),
+                'notionalCap': self.safe_number(tier, 'maxRiskLimit'),
+                'maintenanceMarginRate': self.safe_number(tier, 'maintainMargin'),
+                'maxLeverage': self.safe_number(tier, 'maxLeverage'),
+                'info': tier,
+            })
+        return tiers

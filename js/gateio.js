@@ -557,8 +557,8 @@ module.exports = class gateio extends Exchange {
                     'ORDER_POC_IMMEDIATE': InvalidOrder,
                     'INCREASE_POSITION': InvalidOrder,
                     'CONTRACT_IN_DELISTING': ExchangeError,
-                    'INTERNAL': ExchangeError,
-                    'SERVER_ERROR': ExchangeError,
+                    'INTERNAL': ExchangeNotAvailable,
+                    'SERVER_ERROR': ExchangeNotAvailable,
                     'TOO_BUSY': ExchangeNotAvailable,
                 },
             },
@@ -733,8 +733,8 @@ module.exports = class gateio extends Exchange {
                         'strike': undefined,
                         'optionType': undefined,
                         'precision': {
-                            'price': this.safeNumber (market, 'order_price_round'),
                             'amount': this.parseNumber ('1'),
+                            'price': this.safeNumber (market, 'order_price_round'),
                         },
                         'limits': {
                             'leverage': {
@@ -829,8 +829,8 @@ module.exports = class gateio extends Exchange {
                     'strike': undefined,
                     'optionType': undefined,
                     'precision': {
-                        'price': this.parseNumber (this.parsePrecision (pricePrecisionString)),
                         'amount': this.parseNumber (this.parsePrecision (amountPrecisionString)),
+                        'price': this.parseNumber (this.parsePrecision (pricePrecisionString)),
                     },
                     'limits': {
                         'leverage': {
@@ -2024,8 +2024,9 @@ module.exports = class gateio extends Exchange {
             request['limit'] = limit;
         }
         if (since !== undefined) {
-            request['from'] = parseInt (since / 1000);
-            request['to'] = since + 30 * 24 * 60 * 60;
+            const start = parseInt (since / 1000);
+            request['from'] = start;
+            request['to'] = this.sum (start, 30 * 24 * 60 * 60);
         }
         const response = await this.privateWalletGetDeposits (this.extend (request, params));
         return this.parseTransactions (response, currency);
@@ -2043,8 +2044,9 @@ module.exports = class gateio extends Exchange {
             request['limit'] = limit;
         }
         if (since !== undefined) {
-            request['from'] = parseInt (since / 1000);
-            request['to'] = since + 30 * 24 * 60 * 60;
+            const start = parseInt (since / 1000);
+            request['from'] = start;
+            request['to'] = this.sum (start, 30 * 24 * 60 * 60);
         }
         const response = await this.privateWalletGetWithdrawals (this.extend (request, params));
         return this.parseTransactions (response, currency);
@@ -2099,6 +2101,7 @@ module.exports = class gateio extends Exchange {
             'DMOVE': 'pending',
             'CANCEL': 'failed',
             'DONE': 'ok',
+            'BCODE': 'ok', // GateCode withdrawal
         };
         return this.safeString (statuses, status, status);
     }
@@ -2129,12 +2132,16 @@ module.exports = class gateio extends Exchange {
         // withdrawals
         const id = this.safeString (transaction, 'id');
         let type = undefined;
-        if (id !== undefined) {
+        let amount = this.safeString (transaction, 'amount');
+        if (id[0] === 'b') {
+            // GateCode handling
+            type = Precise.stringGt (amount, '0') ? 'deposit' : 'withdrawal';
+            amount = Precise.stringAbs (amount);
+        } else if (id !== undefined) {
             type = this.parseTransactionType (id[0]);
         }
         const currencyId = this.safeString (transaction, 'currency');
         const code = this.safeCurrencyCode (currencyId);
-        const amount = this.safeNumber (transaction, 'amount');
         const txid = this.safeString (transaction, 'txid');
         const rawStatus = this.safeString (transaction, 'status');
         const status = this.parseTransactionStatus (rawStatus);
@@ -2150,7 +2157,7 @@ module.exports = class gateio extends Exchange {
             'id': id,
             'txid': txid,
             'currency': code,
-            'amount': amount,
+            'amount': this.parseNumber (amount),
             'network': undefined,
             'address': address,
             'addressTo': undefined,
@@ -2641,7 +2648,7 @@ module.exports = class gateio extends Exchange {
             request['limit'] = limit;
         }
         if (since !== undefined && (market['spot'] || market['margin'])) {
-            request['start'] = parseInt (since / 1000);
+            request['from'] = parseInt (since / 1000);
         }
         const method = this.getSupportedMapping (market['type'], {
             'spot': 'privateSpotGetOrders',

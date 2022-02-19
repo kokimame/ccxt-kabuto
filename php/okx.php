@@ -44,11 +44,11 @@ class okx extends Exchange {
                 'fetchBalance' => true,
                 'fetchBidsAsks' => null,
                 'fetchBorrowRate' => true,
-                'fetchBorrowRateHistories' => null,
-                'fetchBorrowRateHistory' => null,
+                'fetchBorrowRateHistories' => true,
+                'fetchBorrowRateHistory' => true,
                 'fetchBorrowRates' => true,
                 'fetchBorrowRatesPerSymbol' => false,
-                'fetchCanceledOrders' => null,
+                'fetchCanceledOrders' => true,
                 'fetchClosedOrder' => null,
                 'fetchClosedOrders' => true,
                 'fetchCurrencies' => true,
@@ -69,6 +69,7 @@ class okx extends Exchange {
                 'fetchLedger' => true,
                 'fetchLedgerEntry' => null,
                 'fetchLeverage' => true,
+                'fetchLeverageTiers' => true,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => true,
                 'fetchMyBuys' => null,
@@ -831,11 +832,10 @@ class okx extends Exchange {
         if ($contract) {
             $symbol = $symbol . ':' . $settle;
             $expiry = $this->safe_integer($market, 'expTime');
-            if ($expiry !== null) {
+            if ($futures) {
                 $ymd = $this->yymmdd($expiry);
                 $symbol = $symbol . '-' . $ymd;
-            }
-            if ($option) {
+            } else if ($option) {
                 $strikePrice = $this->safe_string($market, 'stk');
                 $optionType = $this->safe_string($market, 'optType');
                 $symbol = $symbol . '-' . $strikePrice . '-' . $optionType;
@@ -877,8 +877,8 @@ class okx extends Exchange {
             'strike' => $strikePrice,
             'optionType' => $optionType,
             'precision' => array(
-                'price' => $precisionPrice,
                 'amount' => $this->safe_number($market, 'lotSz'),
+                'price' => $precisionPrice,
             ),
             'limits' => array(
                 'leverage' => array(
@@ -971,9 +971,11 @@ class okx extends Exchange {
         if (!$this->check_required_credentials(false)) {
             return null;
         }
-        // has['fetchCurrencies'] is currently set to false
-        // it will reply with array("msg":"Request header “OK_ACCESS_KEY“ can't be empty.","code":"50103")
-        // if you attempt to access it without authentication
+        //
+        // has['fetchCurrencies'] is currently set to true, but an unauthorized request returns
+        //
+        //     array("msg":"Request header “OK_ACCESS_KEY“ can't be empty.","code":"50103")
+        //
         $response = $this->privateGetAssetCurrencies ($params);
         //
         //     {
@@ -2232,6 +2234,88 @@ class okx extends Exchange {
         return $this->parse_orders($data, $market, $since, $limit);
     }
 
+    public function fetch_canceled_orders($symbol = null, $since = null, $limit = null, $params = array ()) {
+        $this->load_markets();
+        $defaultType = $this->safe_string($this->options, 'defaultType');
+        $options = $this->safe_value($this->options, 'fetchCanceledOrders', array());
+        $type = $this->safe_string($options, 'type', $defaultType);
+        $type = $this->safe_string($params, 'type', $type);
+        $params = $this->omit($params, 'type');
+        $request = array(
+            // 'instType' => strtoupper($type), // SPOT, MARGIN, SWAP, FUTURES, OPTION
+            // 'uly' => currency['id'],
+            // 'instId' => $market['id'],
+            // 'ordType' => 'limit', // $market, $limit, post_only, fok, ioc, comma-separated
+            // 'state' => 'filled', // filled, canceled
+            // 'after' => orderId,
+            // 'before' => orderId,
+            // 'limit' => $limit, // default 100, max 100
+        );
+        $market = null;
+        if ($symbol !== null) {
+            $market = $this->market($symbol);
+            if ($market['futures'] || $market['swap']) {
+                $type = $market['type'];
+            }
+            $request['instId'] = $market['id'];
+        }
+        $request['instType'] = strtoupper($type);
+        if ($limit !== null) {
+            $request['limit'] = $limit; // default 100, max 100
+        }
+        $request['state'] = 'canceled';
+        $method = $this->safe_string($options, 'method', 'privateGetTradeOrdersHistory');
+        $response = $this->$method (array_merge($request, $params));
+        //
+        //     {
+        //         "code" => "0",
+        //         "data" => array(
+        //             {
+        //                 "accFillSz" => "0",
+        //                 "avgPx" => "",
+        //                 "cTime" => "1644037822494",
+        //                 "category" => "normal",
+        //                 "ccy" => "",
+        //                 "clOrdId" => "",
+        //                 "fee" => "0",
+        //                 "feeCcy" => "BTC",
+        //                 "fillPx" => "",
+        //                 "fillSz" => "0",
+        //                 "fillTime" => "",
+        //                 "instId" => "BTC-USDT",
+        //                 "instType" => "SPOT",
+        //                 "lever" => "",
+        //                 "ordId" => "410059580352409602",
+        //                 "ordType" => "limit",
+        //                 "pnl" => "0",
+        //                 "posSide" => "net",
+        //                 "px" => "30000",
+        //                 "rebate" => "0",
+        //                 "rebateCcy" => "USDT",
+        //                 "side" => "buy",
+        //                 "slOrdPx" => "",
+        //                 "slTriggerPx" => "",
+        //                 "slTriggerPxType" => "",
+        //                 "source" => "",
+        //                 "state" => "canceled",
+        //                 "sz" => "0.0005452",
+        //                 "tag" => "",
+        //                 "tdMode" => "cash",
+        //                 "tgtCcy" => "",
+        //                 "tpOrdPx" => "",
+        //                 "tpTriggerPx" => "",
+        //                 "tpTriggerPxType" => "",
+        //                 "tradeId" => "",
+        //                 "uTime" => "1644038165667"
+        //             }
+        //         ),
+        //         "msg" => ""
+        //     }
+        //
+        $data = $this->safe_value($response, 'data', array());
+        return $this->parse_orders($data, $market, $since, $limit);
+    }
+
     public function fetch_closed_orders($symbol = null, $since = null, $limit = null, $params = array ()) {
         $this->load_markets();
         $defaultType = $this->safe_string($this->options, 'defaultType');
@@ -2261,6 +2345,7 @@ class okx extends Exchange {
         if ($limit !== null) {
             $request['limit'] = $limit; // default 100, max 100
         }
+        $request['state'] = 'filled';
         $method = $this->safe_string($options, 'method', 'privateGetTradeOrdersHistory');
         $response = $this->$method (array_merge($request, $params));
         //
@@ -3028,7 +3113,7 @@ class okx extends Exchange {
         $marginMode = $this->safe_string_lower($params, 'mgnMode');
         $params = $this->omit($params, array( 'mgnMode' ));
         if (($marginMode !== 'cross') && ($marginMode !== 'isolated')) {
-            throw new BadRequest($this->id . ' fetchLeverage $params["mgnMode"] must be either cross or isolated');
+            throw new BadRequest($this->id . ' fetchLeverage() requires a mgnMode parameter that must be either cross or isolated');
         }
         $market = $this->market($symbol);
         $request = array(
@@ -3256,10 +3341,12 @@ class okx extends Exchange {
                 }
             }
         }
+        $contractSize = $this->safe_value($market, 'contractSize');
+        $contractSizeString = $this->number_to_string($contractSize);
         $markPriceString = $this->safe_string($position, 'markPx');
         $notionalString = $this->safe_string($position, 'notionalUsd');
         if ($market['inverse']) {
-            $notionalString = Precise::string_div($notionalString, $markPriceString);
+            $notionalString = Precise::string_div(Precise::string_mul($contractsAbs, $contractSizeString), $markPriceString);
         }
         $notional = $this->parse_number($notionalString);
         $marginType = $this->safe_string($position, 'mgnMode');
@@ -3301,7 +3388,7 @@ class okx extends Exchange {
             'unrealizedPnl' => $this->parse_number($unrealizedPnlString),
             'percentage' => $percentage,
             'contracts' => $contracts,
-            'contractSize' => $this->safe_value($market, 'contractSize'),
+            'contractSize' => $contractSize,
             'markPrice' => $this->parse_number($markPriceString),
             'side' => $side,
             'hedged' => $hedged,
@@ -3793,52 +3880,6 @@ class okx extends Exchange {
         return $response;
     }
 
-    public function modify_margin_helper($symbol, $amount, $type, $params = array ()) {
-        $this->load_markets();
-        $market = $this->market($symbol);
-        $posSide = $this->safe_string($params, 'posSide', 'net');
-        $params = $this->omit($params, array( 'posSide' ));
-        $request = array(
-            'instId' => $market['id'],
-            'amt' => $amount,
-            'type' => $type,
-            'posSide' => $posSide,
-        );
-        $response = $this->privatePostAccountPositionMarginBalance (array_merge($request, $params));
-        //
-        //     {
-        //       "code" => "0",
-        //       "data" => array(
-        //         {
-        //           "amt" => "0.01",
-        //           "instId" => "ETH-USD-SWAP",
-        //           "posSide" => "net",
-        //           "type" => "reduce"
-        //         }
-        //       ),
-        //       "msg" => ""
-        //     }
-        //
-        $data = $this->safe_value($response, 'data', array());
-        $entry = $this->safe_value($data, 0, array());
-        $errorCode = $this->safe_string($response, 'code');
-        $status = ($errorCode === '0') ? 'ok' : 'failed';
-        $responseAmount = $this->safe_number($entry, 'amt');
-        $responseType = $this->safe_string($entry, 'type');
-        $marketId = $this->safe_string($entry, 'instId');
-        $responseMarket = $this->safe_market($marketId, $market);
-        $code = $responseMarket['inverse'] ? $responseMarket['base'] : $responseMarket['quote'];
-        $symbol = $responseMarket['symbol'];
-        return array(
-            'info' => $response,
-            'type' => $responseType,
-            'amount' => $responseAmount,
-            'code' => $code,
-            'symbol' => $symbol,
-            'status' => $status,
-        );
-    }
-
     public function fetch_borrow_rates($params = array ()) {
         $this->load_markets();
         $response = $this->privateGetAccountInterestRate ($params);
@@ -3901,6 +3942,117 @@ class okx extends Exchange {
         );
     }
 
+    public function fetch_borrow_rate_histories($since = null, $limit = null, $params = array ()) {
+        $this->load_markets();
+        $request = array(
+            // 'ccy' => $currency['id'],
+            // 'after' => $this->milliseconds(), // Pagination of $data to return records earlier than the requested ts,
+            // 'before' => $since, // Pagination of $data to return records newer than the requested ts,
+            // 'limit' => $limit, // default is 100 and maximum is 100
+        );
+        if ($since !== null) {
+            $request['before'] = $since;
+        }
+        if ($limit !== null) {
+            $request['limit'] = $limit;
+        }
+        $response = $this->publicGetAssetLendingRateHistory (array_merge($request, $params));
+        //
+        //     {
+        //         "code" => "0",
+        //         "data" => array(
+        //             array(
+        //                 "amt" => "992.10341195",
+        //                 "ccy" => "BTC",
+        //                 "rate" => "0.01",
+        //                 "ts" => "1643954400000"
+        //             ),
+        //         ),
+        //         "msg" => ""
+        //     }
+        //
+        $data = $this->safe_value($response, 'data');
+        $borrowRateHistories = array();
+        for ($i = 0; $i < count($data); $i++) {
+            $item = $data[$i];
+            $currency = $this->safe_currency_code($this->safe_string($item, 'ccy'));
+            if (!(is_array($borrowRateHistories) && array_key_exists($currency, $borrowRateHistories))) {
+                $borrowRateHistories[$currency] = array();
+            }
+            $rate = $this->safe_string($item, 'rate');
+            $timestamp = $this->safe_string($item, 'ts');
+            $borrowRateHistories[$currency][] = array(
+                'info' => $item,
+                'currency' => $currency,
+                'rate' => $rate,
+                'timestamp' => $timestamp,
+                'datetime' => $this->iso8601($timestamp),
+            );
+        }
+        $keys = is_array($borrowRateHistories) ? array_keys($borrowRateHistories) : array();
+        for ($i = 0; $i < count($keys); $i++) {
+            $key = $keys[$i];
+            $borrowRateHistories[$key] = $this->filter_by_currency_since_limit($borrowRateHistories[$key], $key, $since, $limit);
+        }
+        return $borrowRateHistories;
+    }
+
+    public function fetch_borrow_rate_history($code, $since = null, $limit = null, $params = array ()) {
+        $codeObject = json_decode('array("ccy" => "' . $code . '", $as_associative_array = true)');
+        $histories = $this->fetch_borrow_rate_histories($since, $limit, $codeObject, $params);
+        if ($histories === null) {
+            throw new BadRequest($this->id . '.fetchBorrowRateHistory returned no data for ' . $code);
+        } else {
+            return $histories;
+        }
+    }
+
+    public function modify_margin_helper($symbol, $amount, $type, $params = array ()) {
+        $this->load_markets();
+        $market = $this->market($symbol);
+        $posSide = $this->safe_string($params, 'posSide', 'net');
+        $params = $this->omit($params, array( 'posSide' ));
+        $request = array(
+            'instId' => $market['id'],
+            'amt' => $amount,
+            'type' => $type,
+            'posSide' => $posSide,
+        );
+        $response = $this->privatePostAccountPositionMarginBalance (array_merge($request, $params));
+        //
+        //     {
+        //       "code" => "0",
+        //       "data" => array(
+        //         {
+        //           "amt" => "0.01",
+        //           "instId" => "ETH-USD-SWAP",
+        //           "posSide" => "net",
+        //           "type" => "reduce"
+        //         }
+        //       ),
+        //       "msg" => ""
+        //     }
+        //
+        $data = $this->safe_value($response, 'data', array());
+        $entry = $this->safe_value($data, 0, array());
+        $errorCode = $this->safe_string($response, 'code');
+        $status = ($errorCode === '0') ? 'ok' : 'failed';
+        $responseAmount = $this->safe_number($entry, 'amt');
+        $responseType = $this->safe_string($entry, 'type');
+        $marketId = $this->safe_string($entry, 'instId');
+        $responseMarket = $this->safe_market($marketId, $market);
+        $code = $responseMarket['inverse'] ? $responseMarket['base'] : $responseMarket['quote'];
+        $symbol = $responseMarket['symbol'];
+        return array(
+            'info' => $response,
+            'type' => $responseType,
+            'amount' => $responseAmount,
+            'code' => $code,
+            'symbol' => $symbol,
+            'status' => $status,
+        );
+    }
+
     public function reduce_margin($symbol, $amount, $params = array ()) {
         return $this->modify_margin_helper($symbol, $amount, 'reduce', $params);
     }
@@ -3909,7 +4061,68 @@ class okx extends Exchange {
         return $this->modify_margin_helper($symbol, $amount, 'add', $params);
     }
 
+    public function fetch_leverage_tiers($symbol = null, $params = array ()) {
+        $this->load_markets();
+        if ($symbol === null) {
+            throw new ArgumentsRequired($this->id . ' fetchLeverageTiers() requires a $symbol argument');
+        }
+        $market = $this->market($symbol);
+        $type = $market['spot'] ? 'MARGIN' : strtoupper($market['type']);
+        $uly = $this->safe_string($market['info'], 'uly');
+        if (!$uly) {
+            throw new BadRequest($this->id . ' fetchLeverageTiers() cannot fetch leverage tiers for ' . $symbol);
+        }
+        $request = array(
+            'instType' => $type,
+            'tdMode' => $this->safe_string($params, 'tdMode', 'isolated'),
+            'uly' => $uly,
+        );
+        if ($type === 'MARGIN') {
+            $request['instId'] = $market['id'];
+        }
+        $response = $this->publicGetPublicPositionTiers (array_merge($request, $params));
+        //
+        //    {
+        //        "code" => "0",
+        //        "data" => array(
+        //            array(
+        //                "baseMaxLoan" => "500",
+        //                "imr" => "0.1",
+        //                "instId" => "ETH-USDT",
+        //                "maxLever" => "10",
+        //                "maxSz" => "500",
+        //                "minSz" => "0",
+        //                "mmr" => "0.03",
+        //                "optMgnFactor" => "0",
+        //                "quoteMaxLoan" => "200000",
+        //                "tier" => "1",
+        //                "uly" => ""
+        //            ),
+        //            ...
+        //        )
+        //    }
+        //
+        $data = $this->safe_value($response, 'data');
+        $brackets = array();
+        for ($i = 0; $i < count($data); $i++) {
+            $tier = $data[$i];
+            $brackets[] = array(
+                'tier' => $this->safe_integer($tier, 'tier'),
+                'notionalCurrency' => $market['quote'],
+                'notionalFloor' => $this->safe_number($tier, 'minSz'),
+                'notionalCap' => $this->safe_number($tier, 'maxSz'),
+                'maintenanceMarginRate' => $this->safe_number($tier, 'mmr'),
+                'maxLeverage' => $this->safe_number($tier, 'maxLever'),
+                'info' => $tier,
+            );
+        }
+        $result = array();
+        $result[$symbol] = $brackets;
+        return $result;
+    }
+
     public function set_sandbox_mode($enable) {
+        parent::set_sandbox_mode($enable);
         if ($enable) {
             $this->headers['x-simulated-trading'] = '1';
         } else if (is_array($this->headers) && array_key_exists('x-simulated-trading', $this->headers)) {

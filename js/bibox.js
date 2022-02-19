@@ -233,21 +233,21 @@ module.exports = class bibox extends Exchange {
                 'type': type,
                 'spot': spot,
                 'margin': false,
-                'future': false,
                 'swap': false,
+                'future': false,
                 'option': false,
+                'active': undefined,
                 'contract': false,
                 'linear': undefined,
                 'inverse': undefined,
                 'contractSize': undefined,
-                'active': undefined,
                 'expiry': undefined,
                 'expiryDatetime': undefined,
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': this.safeNumber (market, 'decimal'),
-                    'amount': this.safeNumber (market, 'amount_scale'),
+                    'amount': this.safeInteger (market, 'amount_scale'),
+                    'price': this.safeInteger (market, 'decimal'),
                 },
                 'limits': {
                     'leverage': {
@@ -276,16 +276,13 @@ module.exports = class bibox extends Exchange {
     parseTicker (ticker, market = undefined) {
         // we don't set values that are not defined by the exchange
         const timestamp = this.safeInteger (ticker, 'timestamp');
-        let symbol = undefined;
-        if (market !== undefined) {
-            symbol = market['symbol'];
-        } else {
-            const baseId = this.safeString (ticker, 'coin_symbol');
-            const quoteId = this.safeString (ticker, 'currency_symbol');
-            const base = this.safeCurrencyCode (baseId);
-            const quote = this.safeCurrencyCode (quoteId);
-            symbol = base + '/' + quote;
+        let marketId = undefined;
+        const baseId = this.safeString (ticker, 'coin_symbol');
+        const quoteId = this.safeString (ticker, 'currency_symbol');
+        if ((baseId !== undefined) && (quoteId !== undefined)) {
+            marketId = baseId + '_' + quoteId;
         }
+        market = this.safeMarket (marketId, market);
         const last = this.safeString (ticker, 'last');
         const change = this.safeString (ticker, 'change');
         const baseVolume = this.safeString2 (ticker, 'vol', 'vol24H');
@@ -294,7 +291,7 @@ module.exports = class bibox extends Exchange {
             percentage = percentage.replace ('%', '');
         }
         return this.safeTicker ({
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
             'high': this.safeString (ticker, 'high'),
@@ -342,41 +339,25 @@ module.exports = class bibox extends Exchange {
         const timestamp = this.safeInteger2 (trade, 'time', 'createdAt');
         let side = this.safeInteger2 (trade, 'side', 'order_side');
         side = (side === 1) ? 'buy' : 'sell';
-        let symbol = undefined;
-        if (market === undefined) {
-            let marketId = this.safeString (trade, 'pair');
-            if (marketId === undefined) {
-                const baseId = this.safeString (trade, 'coin_symbol');
-                const quoteId = this.safeString (trade, 'currency_symbol');
-                if ((baseId !== undefined) && (quoteId !== undefined)) {
-                    marketId = baseId + '_' + quoteId;
-                }
-            }
-            if (marketId in this.markets_by_id) {
-                market = this.markets_by_id[marketId];
+        let marketId = this.safeString (trade, 'pair');
+        if (marketId === undefined) {
+            const baseId = this.safeString (trade, 'coin_symbol');
+            const quoteId = this.safeString (trade, 'currency_symbol');
+            if ((baseId !== undefined) && (quoteId !== undefined)) {
+                marketId = baseId + '_' + quoteId;
             }
         }
-        if (market !== undefined) {
-            symbol = market['symbol'];
-        }
-        let fee = undefined;
-        const feeCostString = this.safeString (trade, 'fee');
-        let feeCurrency = this.safeString (trade, 'fee_symbol');
-        if (feeCurrency !== undefined) {
-            if (feeCurrency in this.currencies_by_id) {
-                feeCurrency = this.currencies_by_id[feeCurrency]['code'];
-            } else {
-                feeCurrency = this.safeCurrencyCode (feeCurrency);
-            }
-        }
-        const feeRate = undefined; // todo: deduce from market if market is defined
+        market = this.safeMarket (marketId, market);
         const priceString = this.safeString (trade, 'price');
         const amountString = this.safeString (trade, 'amount');
+        let fee = undefined;
+        const feeCostString = this.safeString (trade, 'fee');
         if (feeCostString !== undefined) {
+            const feeCurrencyId = this.safeString (trade, 'fee_symbol');
+            const feeCurrencyCode = this.safeCurrencyCode (feeCurrencyId);
             fee = {
                 'cost': Precise.stringNeg (feeCostString),
-                'currency': feeCurrency,
-                'rate': feeRate,
+                'currency': feeCurrencyCode,
             };
         }
         const id = this.safeString (trade, 'id');
@@ -386,7 +367,7 @@ module.exports = class bibox extends Exchange {
             'order': undefined, // Bibox does not have it (documented) yet
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': 'limit',
             'takerOrMaker': undefined,
             'side': side,
@@ -991,21 +972,13 @@ module.exports = class bibox extends Exchange {
     }
 
     parseOrder (order, market = undefined) {
-        let symbol = undefined;
-        if (market === undefined) {
-            let marketId = undefined;
-            const baseId = this.safeString (order, 'coin_symbol');
-            const quoteId = this.safeString (order, 'currency_symbol');
-            if ((baseId !== undefined) && (quoteId !== undefined)) {
-                marketId = baseId + '_' + quoteId;
-            }
-            if (marketId in this.markets_by_id) {
-                market = this.markets_by_id[marketId];
-            }
+        let marketId = undefined;
+        const baseId = this.safeString (order, 'coin_symbol');
+        const quoteId = this.safeString (order, 'currency_symbol');
+        if ((baseId !== undefined) && (quoteId !== undefined)) {
+            marketId = baseId + '_' + quoteId;
         }
-        if (market !== undefined) {
-            symbol = market['symbol'];
-        }
+        market = this.safeMarket (marketId, market);
         const rawType = this.safeString (order, 'order_type');
         const type = (rawType === '1') ? 'market' : 'limit';
         const timestamp = this.safeInteger (order, 'createdAt');
@@ -1018,7 +991,7 @@ module.exports = class bibox extends Exchange {
         const side = (rawSide === '1') ? 'buy' : 'sell';
         const status = this.parseOrderStatus (this.safeString (order, 'status'));
         const id = this.safeString (order, 'id');
-        const feeCost = this.safeNumber (order, 'fee');
+        const feeCost = this.safeString (order, 'fee');
         let fee = undefined;
         if (feeCost !== undefined) {
             fee = {
@@ -1033,7 +1006,7 @@ module.exports = class bibox extends Exchange {
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
             'lastTradeTimestamp': undefined,
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': type,
             'timeInForce': undefined,
             'postOnly': undefined,

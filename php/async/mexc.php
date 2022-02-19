@@ -8,6 +8,7 @@ namespace ccxt\async;
 use Exception; // a common import
 use \ccxt\ExchangeError;
 use \ccxt\ArgumentsRequired;
+use \ccxt\BadRequest;
 use \ccxt\InvalidAddress;
 use \ccxt\InvalidOrder;
 use \ccxt\OrderNotFound;
@@ -51,6 +52,7 @@ class mexc extends Exchange {
                 'fetchIndexOHLCV' => true,
                 'fetchIsolatedPositions' => null,
                 'fetchLeverage' => null,
+                'fetchLeverageTiers' => true,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => true,
                 'fetchMyTrades' => true,
@@ -563,8 +565,8 @@ class mexc extends Exchange {
                 'strike' => null,
                 'optionType' => null,
                 'precision' => array(
-                    'price' => $this->safe_number($market, 'priceUnit'),
                     'amount' => $this->safe_number($market, 'volUnit'),
+                    'price' => $this->safe_number($market, 'priceUnit'),
                 ),
                 'limits' => array(
                     'leverage' => array(
@@ -653,8 +655,8 @@ class mexc extends Exchange {
                 'strike' => null,
                 'optionType' => null,
                 'precision' => array(
-                    'price' => $this->parse_number($this->parse_precision($priceScale)),
                     'amount' => $this->parse_number($this->parse_precision($quantityScale)),
+                    'price' => $this->parse_number($this->parse_precision($priceScale)),
                 ),
                 'limits' => array(
                     'leverage' => array(
@@ -1554,7 +1556,7 @@ class mexc extends Exchange {
         );
         $response = yield $this->fetch_positions(array_merge($request, $params));
         $firstPosition = $this->safe_value($response, 0);
-        return $firstPosition;
+        return $this->parse_position($firstPosition, $market);
     }
 
     public function fetch_positions($symbols = null, $params = array ()) {
@@ -1590,9 +1592,78 @@ class mexc extends Exchange {
         //         )
         //     }
         //
-        // todo add parsePositions, parsePosition
         $data = $this->safe_value($response, 'data', array());
-        return $data;
+        return $this->parse_positions($data);
+    }
+
+    public function parse_position($position, $market = null) {
+        //
+        //     {
+        //         "positionId" => 1394650,
+        //         "symbol" => "ETH_USDT",
+        //         "positionType" => 1,
+        //         "openType" => 1,
+        //         "state" => 1,
+        //         "holdVol" => 1,
+        //         "frozenVol" => 0,
+        //         "closeVol" => 0,
+        //         "holdAvgPrice" => 1217.3,
+        //         "openAvgPrice" => 1217.3,
+        //         "closeAvgPrice" => 0,
+        //         "liquidatePrice" => 1211.2,
+        //         "oim" => 0.1290338,
+        //         "im" => 0.1290338,
+        //         "holdFee" => 0,
+        //         "realised" => -0.0073,
+        //         "leverage" => 100,
+        //         "createTime" => 1609991676000,
+        //         "updateTime" => 1609991676000,
+        //         "autoAddIm" => false
+        //     }
+        //
+        $market = $this->safe_market($this->safe_string($position, 'symbol'), $market);
+        $symbol = $market['symbol'];
+        $contracts = $this->safe_string($position, 'holdVol');
+        $entryPrice = $this->safe_number($position, 'openAvgPrice');
+        $initialMargin = $this->safe_string($position, 'im');
+        $rawSide = $this->safe_string($position, 'positionType');
+        $side = ($rawSide === '1') ? 'long' : 'short';
+        $openType = $this->safe_string($position, 'margin_mode');
+        $marginType = ($openType === '1') ? 'isolated' : 'cross';
+        $leverage = $this->safe_string($position, 'leverage');
+        $liquidationPrice = $this->safe_number($position, 'liquidatePrice');
+        $timestamp = $this->safe_number($position, 'updateTime');
+        return array(
+            'info' => $position,
+            'symbol' => $symbol,
+            'contracts' => $this->parse_number($contracts),
+            'contractSize' => null,
+            'entryPrice' => $entryPrice,
+            'collateral' => null,
+            'side' => $side,
+            'unrealizedProfit' => null,
+            'leverage' => $this->parse_number($leverage),
+            'percentage' => null,
+            'marginType' => $marginType,
+            'notional' => null,
+            'markPrice' => null,
+            'liquidationPrice' => $liquidationPrice,
+            'initialMargin' => $this->parse_number($initialMargin),
+            'initialMarginPercentage' => null,
+            'maintenanceMargin' => null,
+            'maintenanceMarginPercentage' => null,
+            'marginRatio' => null,
+            'timestamp' => $timestamp,
+            'datetime' => $this->iso8601($timestamp),
+        );
+    }
+
+    public function parse_positions($positions) {
+        $result = array();
+        for ($i = 0; $i < count($positions); $i++) {
+            $result[] = $this->parse_position($positions[$i]);
+        }
+        return $result;
     }
 
     public function create_order($symbol, $type, $side, $amount, $price = null, $params = array ()) {
@@ -2394,5 +2465,96 @@ class mexc extends Exchange {
         }
         $sorted = $this->sort_by($rates, 'timestamp');
         return $this->filter_by_symbol_since_limit($sorted, $symbol, $since, $limit);
+    }
+
+    public function fetch_leverage_tiers($symbol = null, $params = array ()) {
+        yield $this->load_markets();
+        $symbolDefined = ($symbol !== null);
+        $market = null;
+        if ($symbolDefined) {
+            $market = $this->market($symbol);
+            if (!$market['contract']) {
+                throw new BadRequest($this->id . ' fetchLeverageTiers() supports contract markets only');
+            }
+        }
+        $response = yield $this->contractPublicGetDetail ($params);
+        //
+        //     {
+        //         "success":true,
+        //         "code":0,
+        //         "data":[
+        //             array(
+        //                 "symbol":"BTC_USDT",
+        //                 "displayName":"BTC_USDT永续",
+        //                 "displayNameEn":"BTC_USDT SWAP",
+        //                 "positionOpenType":3,
+        //                 "baseCoin":"BTC",
+        //                 "quoteCoin":"USDT",
+        //                 "settleCoin":"USDT",
+        //                 "contractSize":0.0001,
+        //                 "minLeverage":1,
+        //                 "maxLeverage":125,
+        //                 "priceScale":2,
+        //                 "volScale":0,
+        //                 "amountScale":4,
+        //                 "priceUnit":0.5,
+        //                 "volUnit":1,
+        //                 "minVol":1,
+        //                 "maxVol":1000000,
+        //                 "bidLimitPriceRate":0.1,
+        //                 "askLimitPriceRate":0.1,
+        //                 "takerFeeRate":0.0006,
+        //                 "makerFeeRate":0.0002,
+        //                 "maintenanceMarginRate":0.004,
+        //                 "initialMarginRate":0.008,
+        //                 "riskBaseVol":10000,
+        //                 "riskIncrVol":200000,
+        //                 "riskIncrMmr":0.004,
+        //                 "riskIncrImr":0.004,
+        //                 "riskLevelLimit":5,
+        //                 "priceCoefficientVariation":0.1,
+        //                 "indexOrigin":["BINANCE","GATEIO","HUOBI","MXC"],
+        //                 "state":0, // 0 enabled, 1 delivery, 2 completed, 3 offline, 4 pause
+        //                 "isNew":false,
+        //                 "isHot":true,
+        //                 "isHidden":false
+        //             ),
+        //             ...
+        //         ]
+        //     }
+        //
+        $result = array();
+        $data = $this->safe_value($response, 'data');
+        for ($i = 0; $i < count($data); $i++) {
+            $item = $data[$i];
+            $maintenanceMarginRate = $this->safe_string($item, 'maintenanceMarginRate');
+            $initialMarginRate = $this->safe_string($item, 'initialMarginRate');
+            $maxVol = $this->safe_string($item, 'maxVol');
+            $riskIncrVol = $this->safe_string($item, 'riskIncrVol');
+            $riskIncrMmr = $this->safe_string($item, 'riskIncrMmr');
+            $riskIncrImr = $this->safe_string($item, 'riskIncrImr');
+            $floor = '0';
+            $tiers = array();
+            $quoteId = $this->safe_string($item, 'quoteCoin');
+            while (Precise::string_lt($floor, $maxVol)) {
+                $cap = Precise::string_add($floor, $riskIncrVol);
+                $tiers[] = array(
+                    'tier' => $this->parse_number(Precise::string_div($cap, $riskIncrVol)),
+                    'notionalCurrency' => $this->safe_currency_code($quoteId),
+                    'notionalFloor' => $this->parse_number($floor),
+                    'notionalCap' => $this->parse_number($cap),
+                    'maintenanceMarginRate' => $this->parse_number($maintenanceMarginRate),
+                    'maxLeverage' => $this->parse_number(Precise::string_div('1', $initialMarginRate)),
+                    'info' => $item,
+                );
+                $initialMarginRate = Precise::string_add($initialMarginRate, $riskIncrImr);
+                $maintenanceMarginRate = Precise::string_add($maintenanceMarginRate, $riskIncrMmr);
+                $floor = $cap;
+            }
+            $id = $this->safe_string($item, 'symbol');
+            $ccxtSymbol = $this->safe_symbol($id);
+            $result[$ccxtSymbol] = $tiers;
+        }
+        return $symbolDefined ? $this->safe_value($result, $symbol) : $result;
     }
 }

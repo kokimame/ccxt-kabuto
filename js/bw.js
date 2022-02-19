@@ -140,36 +140,41 @@ module.exports = class bw extends Exchange {
     async fetchMarkets (params = {}) {
         const response = await this.publicGetExchangeConfigControllerWebsiteMarketcontrollerGetByWebId (params);
         //
-        //     {
-        //         "datas": [
-        //             {
-        //                 "orderNum":null,
-        //                 "leverEnable":true,
-        //                 "leverMultiple":10,
-        //                 "marketId":"291",
-        //                 "webId":"102",
-        //                 "serverId":"entrust_bw_23",
-        //                 "name":"eos_usdt",
-        //                 "leverType":"2",
-        //                 "buyerCurrencyId":"11",
-        //                 "sellerCurrencyId":"7",
-        //                 "amountDecimal":4,
-        //                 "priceDecimal":3,
-        //                 "minAmount":"0.0100000000",
-        //                 "state":1,
-        //                 "openTime":1572537600000,
-        //                 "defaultFee":"0.00200000",
-        //                 "createUid":null,
-        //                 "createTime":0,
-        //                 "modifyUid":null,
-        //                 "modifyTime":1574160113735,
-        //                 "combineMarketId":"",
-        //                 "isCombine":0,
-        //                 "isMining":0
-        //             }
-        //         ],
-        //         "resMsg": { "message":"success !", "method":null, "code":"1" }
-        //     }
+        //    {
+        //        resMsg: {
+        //            method: null,
+        //            code: '1',
+        //            message: 'success !'
+        //        },
+        //        datas: [
+        //            {
+        //                leverMultiple: '10',
+        //                amountDecimal: '4',
+        //                minAmount: '0.0100000000',
+        //                modifyUid: null,
+        //                buyerCurrencyId: '11',
+        //                isCombine: '0',
+        //                priceDecimal: '3',
+        //                combineMarketId: '',
+        //                openPrice: '0',
+        //                leverEnable: true,
+        //                marketId: '291',
+        //                serverId: 'entrust_bw_2',
+        //                isMining: '0',
+        //                webId: '102',
+        //                modifyTime: '1581595375498',
+        //                defaultFee: '0.00200000',
+        //                sellerCurrencyId: '7',
+        //                createTime: '0',
+        //                state: '1',
+        //                name: 'eos_usdt',
+        //                leverType: '2',
+        //                createUid: null,
+        //                orderNum: null,
+        //                openTime: '1574956800000'
+        //            },
+        //        ]
+        //    }
         //
         const markets = this.safeValue (response, 'datas', []);
         const result = [];
@@ -183,60 +188,60 @@ module.exports = class bw extends Exchange {
             quote = this.safeCurrencyCode (quote);
             const baseId = this.safeString (market, 'sellerCurrencyId');
             const quoteId = this.safeString (market, 'buyerCurrencyId');
-            const baseNumericId = parseInt (baseId);
-            const quoteNumericId = parseInt (quoteId);
-            const symbol = base + '/' + quote;
             const state = this.safeInteger (market, 'state');
-            const active = (state === 1);
             const fee = this.safeNumber (market, 'defaultFee');
             result.push ({
                 'id': id,
                 'numericId': numericId,
-                'symbol': symbol,
+                'symbol': base + '/' + quote,
                 'base': base,
                 'quote': quote,
+                'settle': undefined,
                 'baseId': baseId,
                 'quoteId': quoteId,
-                'baseNumericId': baseNumericId,
-                'quoteNumericId': quoteNumericId,
+                'settleId': undefined,
+                'baseNumericId': parseInt (baseId),
+                'quoteNumericId': parseInt (quoteId),
                 'type': 'spot',
                 'spot': true,
                 'margin': false,
-                'future': false,
                 'swap': false,
+                'future': false,
                 'option': false,
-                'optionType': undefined,
-                'strike': undefined,
+                'active': (state === 1),
+                'contract': false,
                 'linear': undefined,
                 'inverse': undefined,
-                'contract': false,
+                'taker': fee,
+                'maker': fee,
                 'contractSize': undefined,
-                'settle': undefined,
-                'settleId': undefined,
                 'expiry': undefined,
                 'expiryDatetime': undefined,
-                'active': active,
-                'maker': fee,
-                'taker': fee,
-                'info': market,
+                'strike': undefined,
+                'optionType': undefined,
                 'precision': {
                     'amount': this.safeInteger (market, 'amountDecimal'),
                     'price': this.safeInteger (market, 'priceDecimal'),
                 },
                 'limits': {
+                    'leverage': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
                     'amount': {
                         'min': this.safeNumber (market, 'minAmount'),
                         'max': undefined,
                     },
                     'price': {
-                        'min': 0,
+                        'min': this.parseNumber ('0'),
                         'max': undefined,
                     },
                     'cost': {
-                        'min': 0,
+                        'min': this.parseNumber ('0'),
                         'max': undefined,
                     },
                 },
+                'info': market,
             });
         }
         return result;

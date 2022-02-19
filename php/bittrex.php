@@ -58,6 +58,7 @@ class bittrex extends Exchange {
                 'fetchIndexOHLCV' => false,
                 'fetchIsolatedPositions' => false,
                 'fetchLeverage' => false,
+                'fetchLeverageTiers' => false,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => 'emulated',
@@ -303,7 +304,6 @@ class bittrex extends Exchange {
             $quoteId = $this->safe_string($market, 'quoteCurrencySymbol');
             $base = $this->safe_currency_code($baseId);
             $quote = $this->safe_currency_code($quoteId);
-            $pricePrecision = $this->safe_integer($market, 'precision', 8);
             $status = $this->safe_string($market, 'status');
             $result[] = array(
                 'id' => $this->safe_string($market, 'symbol'),
@@ -331,9 +331,13 @@ class bittrex extends Exchange {
                 'optionType' => null,
                 'precision' => array(
                     'amount' => intval('8'),
-                    'price' => $pricePrecision,
+                    'price' => $this->safe_integer($market, 'precision', 8),
                 ),
                 'limits' => array(
+                    'leverage' => array(
+                        'min' => null,
+                        'max' => null,
+                    ),
                     'amount' => array(
                         'min' => $this->safe_number($market, 'minTradeSize'),
                         'max' => null,
@@ -343,10 +347,6 @@ class bittrex extends Exchange {
                         'max' => null,
                     ),
                     'cost' => array(
-                        'min' => null,
-                        'max' => null,
-                    ),
-                    'leverage' => array(
                         'min' => null,
                         'max' => null,
                     ),

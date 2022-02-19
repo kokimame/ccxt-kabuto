@@ -107,6 +107,7 @@ module.exports = class bitforex extends Exchange {
                 'CAPP': 'Crypto Application Token',
                 'CREDIT': 'TerraCredit',
                 'CTC': 'Culture Ticket Chain',
+                'EWT': 'EcoWatt Token',
                 'IQ': 'IQ.Cash',
                 'MIR': 'MIR COIN',
                 'NOIA': 'METANOIA',
@@ -130,6 +131,19 @@ module.exports = class bitforex extends Exchange {
 
     async fetchMarkets (params = {}) {
         const response = await this.publicGetApiV1MarketSymbols (params);
+        //
+        //    {
+        //        "data": [
+        //            {
+        //                "amountPrecision":4,
+        //                "minOrderAmount":3.0E-4,
+        //                "pricePrecision":2,
+        //                "symbol":"coin-usdt-btc"
+        //            },
+        //            ...
+        //        ]
+        //    }
+        //
         const data = response['data'];
         const result = [];
         for (let i = 0; i < data.length; i++) {
@@ -140,38 +154,52 @@ module.exports = class bitforex extends Exchange {
             const quoteId = symbolParts[1];
             const base = this.safeCurrencyCode (baseId);
             const quote = this.safeCurrencyCode (quoteId);
-            const symbol = base + '/' + quote;
-            const active = true;
-            const precision = {
-                'amount': this.safeInteger (market, 'amountPrecision'),
-                'price': this.safeInteger (market, 'pricePrecision'),
-            };
-            const limits = {
-                'amount': {
-                    'min': this.safeNumber (market, 'minOrderAmount'),
-                    'max': undefined,
-                },
-                'price': {
-                    'min': undefined,
-                    'max': undefined,
-                },
-                'cost': {
-                    'min': undefined,
-                    'max': undefined,
-                },
-            };
             result.push ({
                 'id': id,
-                'symbol': symbol,
+                'symbol': base + '/' + quote,
                 'base': base,
                 'quote': quote,
+                'settle': undefined,
                 'baseId': baseId,
                 'quoteId': quoteId,
+                'settleId': undefined,
                 'type': 'spot',
                 'spot': true,
-                'active': active,
-                'precision': precision,
-                'limits': limits,
+                'margin': false,
+                'swap': false,
+                'future': false,
+                'option': false,
+                'active': true,
+                'contract': false,
+                'linear': undefined,
+                'inverse': undefined,
+                'contractSize': undefined,
+                'expiry': undefined,
+                'expiryDateTime': undefined,
+                'strike': undefined,
+                'optionType': undefined,
+                'precision': {
+                    'amount': this.safeInteger (market, 'amountPrecision'),
+                    'price': this.safeInteger (market, 'pricePrecision'),
+                },
+                'limits': {
+                    'leverage': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'amount': {
+                        'min': this.safeNumber (market, 'minOrderAmount'),
+                        'max': undefined,
+                    },
+                    'price': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'cost': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                },
                 'info': market,
             });
         }

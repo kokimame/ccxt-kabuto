@@ -563,8 +563,8 @@ class gateio extends Exchange {
                     'ORDER_POC_IMMEDIATE' => '\\ccxt\\InvalidOrder',
                     'INCREASE_POSITION' => '\\ccxt\\InvalidOrder',
                     'CONTRACT_IN_DELISTING' => '\\ccxt\\ExchangeError',
-                    'INTERNAL' => '\\ccxt\\ExchangeError',
-                    'SERVER_ERROR' => '\\ccxt\\ExchangeError',
+                    'INTERNAL' => '\\ccxt\\ExchangeNotAvailable',
+                    'SERVER_ERROR' => '\\ccxt\\ExchangeNotAvailable',
                     'TOO_BUSY' => '\\ccxt\\ExchangeNotAvailable',
                 ),
             ),
@@ -739,8 +739,8 @@ class gateio extends Exchange {
                         'strike' => null,
                         'optionType' => null,
                         'precision' => array(
-                            'price' => $this->safe_number($market, 'order_price_round'),
                             'amount' => $this->parse_number('1'),
+                            'price' => $this->safe_number($market, 'order_price_round'),
                         ),
                         'limits' => array(
                             'leverage' => array(
@@ -835,8 +835,8 @@ class gateio extends Exchange {
                     'strike' => null,
                     'optionType' => null,
                     'precision' => array(
-                        'price' => $this->parse_number($this->parse_precision($pricePrecisionString)),
                         'amount' => $this->parse_number($this->parse_precision($amountPrecisionString)),
+                        'price' => $this->parse_number($this->parse_precision($pricePrecisionString)),
                     ),
                     'limits' => array(
                         'leverage' => array(
@@ -2030,8 +2030,9 @@ class gateio extends Exchange {
             $request['limit'] = $limit;
         }
         if ($since !== null) {
-            $request['from'] = intval($since / 1000);
-            $request['to'] = $since + 30 * 24 * 60 * 60;
+            $start = intval($since / 1000);
+            $request['from'] = $start;
+            $request['to'] = $this->sum($start, 30 * 24 * 60 * 60);
         }
         $response = yield $this->privateWalletGetDeposits (array_merge($request, $params));
         return $this->parse_transactions($response, $currency);
@@ -2049,8 +2050,9 @@ class gateio extends Exchange {
             $request['limit'] = $limit;
         }
         if ($since !== null) {
-            $request['from'] = intval($since / 1000);
-            $request['to'] = $since + 30 * 24 * 60 * 60;
+            $start = intval($since / 1000);
+            $request['from'] = $start;
+            $request['to'] = $this->sum($start, 30 * 24 * 60 * 60);
         }
         $response = yield $this->privateWalletGetWithdrawals (array_merge($request, $params));
         return $this->parse_transactions($response, $currency);
@@ -2105,6 +2107,7 @@ class gateio extends Exchange {
             'DMOVE' => 'pending',
             'CANCEL' => 'failed',
             'DONE' => 'ok',
+            'BCODE' => 'ok', // GateCode withdrawal
         );
         return $this->safe_string($statuses, $status, $status);
     }
@@ -2135,12 +2138,16 @@ class gateio extends Exchange {
         // withdrawals
         $id = $this->safe_string($transaction, 'id');
         $type = null;
-        if ($id !== null) {
+        $amount = $this->safe_string($transaction, 'amount');
+        if ($id[0] === 'b') {
+            // GateCode handling
+            $type = Precise::string_gt($amount, '0') ? 'deposit' : 'withdrawal';
+            $amount = Precise::string_abs($amount);
+        } else if ($id !== null) {
             $type = $this->parse_transaction_type($id[0]);
         }
         $currencyId = $this->safe_string($transaction, 'currency');
         $code = $this->safe_currency_code($currencyId);
-        $amount = $this->safe_number($transaction, 'amount');
         $txid = $this->safe_string($transaction, 'txid');
         $rawStatus = $this->safe_string($transaction, 'status');
         $status = $this->parse_transaction_status($rawStatus);
@@ -2156,7 +2163,7 @@ class gateio extends Exchange {
             'id' => $id,
             'txid' => $txid,
             'currency' => $code,
-            'amount' => $amount,
+            'amount' => $this->parse_number($amount),
             'network' => null,
             'address' => $address,
             'addressTo' => null,
@@ -2647,7 +2654,7 @@ class gateio extends Exchange {
             $request['limit'] = $limit;
         }
         if ($since !== null && ($market['spot'] || $market['margin'])) {
-            $request['start'] = intval($since / 1000);
+            $request['from'] = intval($since / 1000);
         }
         $method = $this->get_supported_mapping($market['type'], array(
             'spot' => 'privateSpotGetOrders',

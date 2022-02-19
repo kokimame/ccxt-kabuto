@@ -1473,11 +1473,11 @@ The CCXT library currently supports the following 114 cryptocurrency exchange ma
      
      - 
    * - .. image:: https://user-images.githubusercontent.com/1294454/148647666-c109c20b-f8ac-472f-91c3-5f658cb90f49.jpeg
-          :target: https://wazirx.com
+          :target: https://wazirx.com/invite/k7rrnks5
           :alt: wazirx
      
      - wazirx
-     - `WazirX <https://wazirx.com>`__
+     - `WazirX <https://wazirx.com/invite/k7rrnks5>`__
      - .. image:: https://img.shields.io/badge/2-lightgray
           :target: https://docs.wazirx.com/#public-rest-api-for-wazirx
           :alt: API Version 2
@@ -2715,10 +2715,17 @@ We currently load spot markets with the unified ``BASE/QUOTE`` symbol schema int
 
  **Please, check this announcement: `Unified contract naming conventions <https://github.com/ccxt/ccxt/issues/10931>`__
 
-Futures Contracts
-"""""""""""""""""
+CCXT supports the following types of derivative contracts:
 
-A futures market symbol consists of the underlying currency, the quoting currency, the settlement currency and an arbitrary identifier. Most often the identifier is the settlement date of the futures contract in ``YYMMDD`` format:
+
+ * ``future`` – for expiring futures contracts that have a delivery/settlement date ` <https://en.wikipedia.org/wiki/Futures_contract>`__
+ * ``swap`` – for perpetual swap futures that don't have a delivery date ` <https://en.wikipedia.org/wiki/Perpetual_futures>`__
+ * ``option`` – for option contracts (https://en.wikipedia.org/wiki/Option_contract)
+
+Future
+""""""
+
+A future market symbol consists of the underlying currency, the quoting currency, the settlement currency and an arbitrary identifier. Most often the identifier is the settlement date of the future contract in ``YYMMDD`` format:
 
 .. code-block:: JavaScript
 
@@ -2737,8 +2744,8 @@ A futures market symbol consists of the underlying currency, the quoting currenc
    'ETH/USDT:ETH-210625'  // ETH/USDT futures contract settled in ETH (inverse) on 2021-06-25
    'ETH/USDT:USDT-210625' // ETH/USDT futures contract settled in USDT (linear, vanilla) on 2021-06-25
 
-Perpetual Swaps (Perpetual Futures)
-"""""""""""""""""""""""""""""""""""
+Perpetual Swap (Perpetual Future)
+"""""""""""""""""""""""""""""""""
 
 .. code-block:: JavaScript
 
@@ -2754,8 +2761,8 @@ Perpetual Swaps (Perpetual Futures)
    'ETH/USDT:ETH'  // ETH/USDT inverse perpetual swap contract funded in ETH
    'ETH/USDT:USDT' // ETH/USDT linear perpetual swap contract funded in USDT
 
-Options
-"""""""
+Option
+""""""
 
 .. code-block:: JavaScript
 
@@ -4016,6 +4023,69 @@ The possible values in the ``status`` field are:
  * ``'shutdown``\ ' means the exchange was closed, and the ``updated`` field should contain the datetime of the shutdown
  * ``'error'`` means that either the exchange API is broken, or the implementation of the exchange in CCXT is broken
  * ``'maintenance'`` means regular maintenance, and the ``eta`` field should contain the datetime when the exchange is expected to be operational again
+
+Fetch Leverage Tiers
+--------------------
+
+You can obtain the absolute maximum leverage for a market by accessing ``market['limits']['leverage']['max']``.
+For many contracts, the maximum leverage will depend on the size of your position.
+You can access those limits via the ``fetchLeverageTiers()`` method.
+
+.. code-block:: Javascript
+
+   fetchLeverageTiers(symbol, params = {})
+
+The ``fetchLeverageTiers()`` method can be used to obtain the maximum leverage for a market at varying position sizes. It can also be used to obtain the maintenance margin rate, and the max tradeable amount for a market when that information is not available from the market object:
+
+Fetch Leverage Tiers Structure
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``fetchLeverageTiers()`` method will return a structure like shown below:
+
+.. code-block:: JavaScript
+
+   {
+       'BNB/USDT': [
+           {
+               "tier": 1,                       // tier index
+               "notionalCurrency": "USDT",      // the currency that notionalFloor and notionalCap are in
+               "notionalFloor": 0,              // the lowest amount of this tier // stake = 0.0
+               "notionalCap": 10000,            // the highest amount of this tier // max stake amount at 75x leverage = 133.33333333333334
+               "maintenanceMarginRate": 0.0065, // maintenance margin rate
+               "maxLeverage": 75,               // max available leverage for this market when the value of the trade is > notionalFloor and < notionalCap
+               "info": { ... }                  // Response from exchange
+           },
+           {
+               "tier": 2,
+               "notionalCurrency": "USDT",
+               "notionalFloor": 10000,          // min stake amount at 50x leverage = 200.0
+               "notionalCap": 50000,            // max stake amount at 50x leverage = 1000.0
+               "maintenanceMarginRatio": 0.01,
+               "maxLeverage": 50,
+               "info": { ... },
+           },
+           ...
+           {
+               "tier": 9,
+               "notionalCurrency": "USDT",
+               "notionalFloor": 20000000,
+               "notionalCap": 50000000,
+               "maintenanceMarginRate": 0.5,
+               "maxLeverage": 1,
+               "info": { ... },
+           },
+       ]
+       ...
+     ],
+   }
+
+In the example above:
+
+
+ * stakes below 133.33       = a max leverage of 75
+ * stakes from 200 + 1000    = a max leverage of 50
+ * a stake amount of 150     = a max leverage of (10000 / 150)   = 66.66
+ * stakes between 133.33-200 = a max leverage of (10000 / stake) = 50.01 -> 74.99
 
 Private API
 ===========

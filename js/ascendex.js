@@ -5,6 +5,7 @@
 const Exchange = require ('./base/Exchange');
 const { ArgumentsRequired, AuthenticationError, ExchangeError, InsufficientFunds, InvalidOrder, BadSymbol, PermissionDenied, BadRequest } = require ('./base/errors');
 const { TICK_SIZE } = require ('./base/functions/number');
+const Precise = require ('./base/Precise');
 
 //  ---------------------------------------------------------------------------
 
@@ -42,6 +43,7 @@ module.exports = class ascendex extends Exchange {
                 'fetchIndexOHLCV': false,
                 'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
+                'fetchLeverageTiers': true,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchOHLCV': true,
@@ -81,7 +83,7 @@ module.exports = class ascendex extends Exchange {
             'urls': {
                 'logo': 'https://user-images.githubusercontent.com/1294454/112027508-47984600-8b48-11eb-9e17-d26459cc36c6.jpg',
                 'api': 'https://ascendex.com',
-                'test': 'https://bitmax-test.io',
+                'test': 'https://api-test.ascendex-sandbox.com',
                 'www': 'https://ascendex.com',
                 'doc': [
                     'https://bitmax-exchange.github.io/bitmax-pro-api/#bitmax-pro-api-documentation',
@@ -377,7 +379,6 @@ module.exports = class ascendex extends Exchange {
             const currency = dataById[id];
             const code = this.safeCurrencyCode (id);
             const precision = this.safeString2 (currency, 'precisionScale', 'nativeScale');
-            const minAmount = this.parsePrecision (precision);
             // why would the exchange API have different names for the same field
             const fee = this.safeNumber2 (currency, 'withdrawFee', 'withdrawalFee');
             const status = this.safeString2 (currency, 'status', 'statusCode');
@@ -397,7 +398,7 @@ module.exports = class ascendex extends Exchange {
                 'precision': parseInt (precision),
                 'limits': {
                     'amount': {
-                        'min': this.parseNumber (minAmount),
+                        'min': this.parseNumber (this.parsePrecision (precision)),
                         'max': undefined,
                     },
                     'withdraw': {
@@ -561,8 +562,8 @@ module.exports = class ascendex extends Exchange {
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': this.safeNumber (market, 'tickSize'),
                     'amount': this.safeNumber (market, 'lotSize'),
+                    'price': this.safeNumber (market, 'tickSize'),
                 },
                 'limits': {
                     'leverage': {
@@ -2265,6 +2266,76 @@ module.exports = class ascendex extends Exchange {
             throw new BadSymbol (this.id + ' setMarginMode() supports futures contracts only');
         }
         return await this.v2PrivateAccountGroupPostFuturesMarginType (this.extend (request, params));
+    }
+
+    async fetchLeverageTiers (symbol = undefined, params = {}) {
+        await this.loadMarkets ();
+        const tiers = {};
+        const symbolDefined = (symbol !== undefined);
+        if (symbolDefined) {
+            const market = this.market (symbol);
+            if (!market['contract']) {
+                throw new BadRequest (this.id + ' fetchLeverageTiers() supports contract markets only');
+            }
+        }
+        const response = await this.v2PublicGetFuturesContract (params);
+        //
+        //     {
+        //         "code":0,
+        //         "data":[
+        //             {
+        //                 "symbol":"BTC-PERP",
+        //                 "status":"Normal",
+        //                 "displayName":"BTCUSDT",
+        //                 "settlementAsset":"USDT",
+        //                 "underlying":"BTC/USDT",
+        //                 "tradingStartTime":1579701600000,
+        //                 "priceFilter":{"minPrice":"1","maxPrice":"1000000","tickSize":"1"},
+        //                 "lotSizeFilter":{"minQty":"0.0001","maxQty":"1000000000","lotSize":"0.0001"},
+        //                 "commissionType":"Quote",
+        //                 "commissionReserveRate":"0.001",
+        //                 "marketOrderPriceMarkup":"0.03",
+        //                 "marginRequirements":[
+        //                     {"positionNotionalLowerBound":"0","positionNotionalUpperBound":"50000","initialMarginRate":"0.01","maintenanceMarginRate":"0.006"},
+        //                     {"positionNotionalLowerBound":"50000","positionNotionalUpperBound":"200000","initialMarginRate":"0.02","maintenanceMarginRate":"0.012"},
+        //                     {"positionNotionalLowerBound":"200000","positionNotionalUpperBound":"2000000","initialMarginRate":"0.04","maintenanceMarginRate":"0.024"},
+        //                     {"positionNotionalLowerBound":"2000000","positionNotionalUpperBound":"20000000","initialMarginRate":"0.1","maintenanceMarginRate":"0.06"},
+        //                     {"positionNotionalLowerBound":"20000000","positionNotionalUpperBound":"40000000","initialMarginRate":"0.2","maintenanceMarginRate":"0.12"},
+        //                     {"positionNotionalLowerBound":"40000000","positionNotionalUpperBound":"1000000000","initialMarginRate":"0.333333","maintenanceMarginRate":"0.2"}
+        //                 ]
+        //             }
+        //         ]
+        //     }
+        //
+        const data = this.safeValue (response, 'data');
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i];
+            const marginRequirements = this.safeValue (item, 'marginRequirements');
+            const id = this.safeString (item, 'symbol');
+            const market = this.market (id);
+            const brackets = [];
+            for (let j = 0; j < marginRequirements.length; j++) {
+                const bracket = marginRequirements[j];
+                const initialMarginRate = this.safeString (bracket, 'initialMarginRate');
+                brackets.push ({
+                    'tier': this.sum (j, 1),
+                    'notionalCurrency': market['quote'],
+                    'notionalFloor': this.safeNumber (bracket, 'positionNotionalLowerBound'),
+                    'notionalCap': this.safeNumber (bracket, 'positionNotionalUpperBound'),
+                    'maintenanceMarginRate': this.safeNumber (bracket, 'maintenanceMarginRate'),
+                    'maxLeverage': this.parseNumber (Precise.stringDiv ('1', initialMarginRate)),
+                    'info': bracket,
+                });
+            }
+            tiers[market['symbol']] = brackets;
+        }
+        if (symbolDefined) {
+            const result = {};
+            result[symbol] = this.safeValue (tiers, symbol);
+            return result;
+        } else {
+            return tiers;
+        }
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {

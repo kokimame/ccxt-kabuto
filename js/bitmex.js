@@ -35,6 +35,7 @@ module.exports = class bitmex extends Exchange {
                 'fetchClosedOrders': true,
                 'fetchIndexOHLCV': false,
                 'fetchLedger': true,
+                'fetchLeverageTiers': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
@@ -350,8 +351,6 @@ module.exports = class bitmex extends Exchange {
             const positionId = this.safeString2 (market, 'positionCurrency', 'quoteCurrency');
             const position = this.safeCurrencyCode (positionId);
             const positionIsQuote = (position === quote);
-            const lotSize = this.safeNumber (market, 'lotSize');
-            const tickSize = this.safeNumber (market, 'tickSize');
             const maxOrderQty = this.safeNumber (market, 'maxOrderQty');
             const contract = !index;
             const initMargin = this.safeString (market, 'initMargin', '1');
@@ -373,20 +372,20 @@ module.exports = class bitmex extends Exchange {
                 'option': false,
                 'prediction': prediction,
                 'index': index,
+                'active': active,
                 'contract': contract,
                 'linear': contract ? !inverse : undefined,
                 'inverse': contract ? inverse : undefined,
                 'taker': this.safeNumber (market, 'takerFee'),
                 'maker': this.safeNumber (market, 'makerFee'),
                 'contractSize': this.safeNumber (market, 'multiplier'),
-                'active': active,
                 'expiry': expiry,
                 'expiryDatetime': expiryDatetime,
                 'strike': this.safeNumber (market, 'optionStrikePrice'),
                 'optionType': undefined,
                 'precision': {
-                    'amount': lotSize,
-                    'price': tickSize,
+                    'amount': this.safeNumber (market, 'lotSize'),
+                    'price': this.safeNumber (market, 'tickSize'),
                 },
                 'limits': {
                     'leverage': {
@@ -394,15 +393,15 @@ module.exports = class bitmex extends Exchange {
                         'max': contract ? maxLeverage : undefined,
                     },
                     'amount': {
-                        'min': positionIsQuote ? undefined : lotSize,
+                        'min': undefined,
                         'max': positionIsQuote ? undefined : maxOrderQty,
                     },
                     'price': {
-                        'min': tickSize,
+                        'min': undefined,
                         'max': this.safeNumber (market, 'maxPrice'),
                     },
                     'cost': {
-                        'min': positionIsQuote ? lotSize : undefined,
+                        'min': undefined,
                         'max': positionIsQuote ? maxOrderQty : undefined,
                     },
                 },

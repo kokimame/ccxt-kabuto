@@ -12,6 +12,7 @@ try:
 except NameError:
     basestring = str  # Python 2
 import hashlib
+import json
 from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import AuthenticationError
 from ccxt.base.errors import PermissionDenied
@@ -67,11 +68,11 @@ class okx(Exchange):
                 'fetchBalance': True,
                 'fetchBidsAsks': None,
                 'fetchBorrowRate': True,
-                'fetchBorrowRateHistories': None,
-                'fetchBorrowRateHistory': None,
+                'fetchBorrowRateHistories': True,
+                'fetchBorrowRateHistory': True,
                 'fetchBorrowRates': True,
                 'fetchBorrowRatesPerSymbol': False,
-                'fetchCanceledOrders': None,
+                'fetchCanceledOrders': True,
                 'fetchClosedOrder': None,
                 'fetchClosedOrders': True,
                 'fetchCurrencies': True,
@@ -92,6 +93,7 @@ class okx(Exchange):
                 'fetchLedger': True,
                 'fetchLedgerEntry': None,
                 'fetchLeverage': True,
+                'fetchLeverageTiers': True,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': True,
                 'fetchMyBuys': None,
@@ -842,10 +844,10 @@ class okx(Exchange):
         if contract:
             symbol = symbol + ':' + settle
             expiry = self.safe_integer(market, 'expTime')
-            if expiry is not None:
+            if futures:
                 ymd = self.yymmdd(expiry)
                 symbol = symbol + '-' + ymd
-            if option:
+            elif option:
                 strikePrice = self.safe_string(market, 'stk')
                 optionType = self.safe_string(market, 'optType')
                 symbol = symbol + '-' + strikePrice + '-' + optionType
@@ -884,8 +886,8 @@ class okx(Exchange):
             'strike': strikePrice,
             'optionType': optionType,
             'precision': {
-                'price': precisionPrice,
                 'amount': self.safe_number(market, 'lotSz'),
+                'price': precisionPrice,
             },
             'limits': {
                 'leverage': {
@@ -972,9 +974,11 @@ class okx(Exchange):
         # and fallback to generating the currencies from the markets
         if not self.check_required_credentials(False):
             return None
-        # has['fetchCurrencies'] is currently set to False
-        # it will reply with {"msg":"Request header “OK_ACCESS_KEY“ can't be empty.","code":"50103"}
-        # if you attempt to access it without authentication
+        #
+        # has['fetchCurrencies'] is currently set to True, but an unauthorized request returns
+        #
+        #     {"msg":"Request header “OK_ACCESS_KEY“ can't be empty.","code":"50103"}
+        #
         response = self.privateGetAssetCurrencies(params)
         #
         #     {
@@ -2153,6 +2157,84 @@ class okx(Exchange):
         data = self.safe_value(response, 'data', [])
         return self.parse_orders(data, market, since, limit)
 
+    def fetch_canceled_orders(self, symbol=None, since=None, limit=None, params={}):
+        self.load_markets()
+        defaultType = self.safe_string(self.options, 'defaultType')
+        options = self.safe_value(self.options, 'fetchCanceledOrders', {})
+        type = self.safe_string(options, 'type', defaultType)
+        type = self.safe_string(params, 'type', type)
+        params = self.omit(params, 'type')
+        request = {
+            # 'instType': type.upper(),  # SPOT, MARGIN, SWAP, FUTURES, OPTION
+            # 'uly': currency['id'],
+            # 'instId': market['id'],
+            # 'ordType': 'limit',  # market, limit, post_only, fok, ioc, comma-separated
+            # 'state': 'filled',  # filled, canceled
+            # 'after': orderId,
+            # 'before': orderId,
+            # 'limit': limit,  # default 100, max 100
+        }
+        market = None
+        if symbol is not None:
+            market = self.market(symbol)
+            if market['futures'] or market['swap']:
+                type = market['type']
+            request['instId'] = market['id']
+        request['instType'] = type.upper()
+        if limit is not None:
+            request['limit'] = limit  # default 100, max 100
+        request['state'] = 'canceled'
+        method = self.safe_string(options, 'method', 'privateGetTradeOrdersHistory')
+        response = getattr(self, method)(self.extend(request, params))
+        #
+        #     {
+        #         "code": "0",
+        #         "data": [
+        #             {
+        #                 "accFillSz": "0",
+        #                 "avgPx": "",
+        #                 "cTime": "1644037822494",
+        #                 "category": "normal",
+        #                 "ccy": "",
+        #                 "clOrdId": "",
+        #                 "fee": "0",
+        #                 "feeCcy": "BTC",
+        #                 "fillPx": "",
+        #                 "fillSz": "0",
+        #                 "fillTime": "",
+        #                 "instId": "BTC-USDT",
+        #                 "instType": "SPOT",
+        #                 "lever": "",
+        #                 "ordId": "410059580352409602",
+        #                 "ordType": "limit",
+        #                 "pnl": "0",
+        #                 "posSide": "net",
+        #                 "px": "30000",
+        #                 "rebate": "0",
+        #                 "rebateCcy": "USDT",
+        #                 "side": "buy",
+        #                 "slOrdPx": "",
+        #                 "slTriggerPx": "",
+        #                 "slTriggerPxType": "",
+        #                 "source": "",
+        #                 "state": "canceled",
+        #                 "sz": "0.0005452",
+        #                 "tag": "",
+        #                 "tdMode": "cash",
+        #                 "tgtCcy": "",
+        #                 "tpOrdPx": "",
+        #                 "tpTriggerPx": "",
+        #                 "tpTriggerPxType": "",
+        #                 "tradeId": "",
+        #                 "uTime": "1644038165667"
+        #             }
+        #         ],
+        #         "msg": ""
+        #     }
+        #
+        data = self.safe_value(response, 'data', [])
+        return self.parse_orders(data, market, since, limit)
+
     def fetch_closed_orders(self, symbol=None, since=None, limit=None, params={}):
         self.load_markets()
         defaultType = self.safe_string(self.options, 'defaultType')
@@ -2179,6 +2261,7 @@ class okx(Exchange):
         request['instType'] = type.upper()
         if limit is not None:
             request['limit'] = limit  # default 100, max 100
+        request['state'] = 'filled'
         method = self.safe_string(options, 'method', 'privateGetTradeOrdersHistory')
         response = getattr(self, method)(self.extend(request, params))
         #
@@ -2907,7 +2990,7 @@ class okx(Exchange):
         marginMode = self.safe_string_lower(params, 'mgnMode')
         params = self.omit(params, ['mgnMode'])
         if (marginMode != 'cross') and (marginMode != 'isolated'):
-            raise BadRequest(self.id + ' fetchLeverage params["mgnMode"] must be either cross or isolated')
+            raise BadRequest(self.id + ' fetchLeverage() requires a mgnMode parameter that must be either cross or isolated')
         market = self.market(symbol)
         request = {
             'instId': market['id'],
@@ -3123,10 +3206,12 @@ class okx(Exchange):
                     side = 'long'
                 else:
                     side = 'short'
+        contractSize = self.safe_value(market, 'contractSize')
+        contractSizeString = self.number_to_string(contractSize)
         markPriceString = self.safe_string(position, 'markPx')
         notionalString = self.safe_string(position, 'notionalUsd')
         if market['inverse']:
-            notionalString = Precise.string_div(notionalString, markPriceString)
+            notionalString = Precise.string_div(Precise.string_mul(contractsAbs, contractSizeString), markPriceString)
         notional = self.parse_number(notionalString)
         marginType = self.safe_string(position, 'mgnMode')
         initialMarginString = None
@@ -3165,7 +3250,7 @@ class okx(Exchange):
             'unrealizedPnl': self.parse_number(unrealizedPnlString),
             'percentage': percentage,
             'contracts': contracts,
-            'contractSize': self.safe_value(market, 'contractSize'),
+            'contractSize': contractSize,
             'markPrice': self.parse_number(markPriceString),
             'side': side,
             'hedged': hedged,
@@ -3628,51 +3713,6 @@ class okx(Exchange):
         #
         return response
 
-    def modify_margin_helper(self, symbol, amount, type, params={}):
-        self.load_markets()
-        market = self.market(symbol)
-        posSide = self.safe_string(params, 'posSide', 'net')
-        params = self.omit(params, ['posSide'])
-        request = {
-            'instId': market['id'],
-            'amt': amount,
-            'type': type,
-            'posSide': posSide,
-        }
-        response = self.privatePostAccountPositionMarginBalance(self.extend(request, params))
-        #
-        #     {
-        #       "code": "0",
-        #       "data": [
-        #         {
-        #           "amt": "0.01",
-        #           "instId": "ETH-USD-SWAP",
-        #           "posSide": "net",
-        #           "type": "reduce"
-        #         }
-        #       ],
-        #       "msg": ""
-        #     }
-        #
-        data = self.safe_value(response, 'data', [])
-        entry = self.safe_value(data, 0, {})
-        errorCode = self.safe_string(response, 'code')
-        status = 'ok' if (errorCode == '0') else 'failed'
-        responseAmount = self.safe_number(entry, 'amt')
-        responseType = self.safe_string(entry, 'type')
-        marketId = self.safe_string(entry, 'instId')
-        responseMarket = self.safe_market(marketId, market)
-        code = responseMarket['base'] if responseMarket['inverse'] else responseMarket['quote']
-        symbol = responseMarket['symbol']
-        return {
-            'info': response,
-            'type': responseType,
-            'amount': responseAmount,
-            'code': code,
-            'symbol': symbol,
-            'status': status,
-        }
-
     def fetch_borrow_rates(self, params={}):
         self.load_markets()
         response = self.privateGetAccountInterestRate(params)
@@ -3732,13 +3772,171 @@ class okx(Exchange):
             'info': rate,
         }
 
+    def fetch_borrow_rate_histories(self, since=None, limit=None, params={}):
+        self.load_markets()
+        request = {
+            # 'ccy': currency['id'],
+            # 'after': self.milliseconds(),  # Pagination of data to return records earlier than the requested ts,
+            # 'before': since,  # Pagination of data to return records newer than the requested ts,
+            # 'limit': limit,  # default is 100 and maximum is 100
+        }
+        if since is not None:
+            request['before'] = since
+        if limit is not None:
+            request['limit'] = limit
+        response = self.publicGetAssetLendingRateHistory(self.extend(request, params))
+        #
+        #     {
+        #         "code": "0",
+        #         "data": [
+        #             {
+        #                 "amt": "992.10341195",
+        #                 "ccy": "BTC",
+        #                 "rate": "0.01",
+        #                 "ts": "1643954400000"
+        #             },
+        #         ],
+        #         "msg": ""
+        #     }
+        #
+        data = self.safe_value(response, 'data')
+        borrowRateHistories = {}
+        for i in range(0, len(data)):
+            item = data[i]
+            currency = self.safe_currency_code(self.safe_string(item, 'ccy'))
+            if not (currency in borrowRateHistories):
+                borrowRateHistories[currency] = []
+            rate = self.safe_string(item, 'rate')
+            timestamp = self.safe_string(item, 'ts')
+            borrowRateHistories[currency].append({
+                'info': item,
+                'currency': currency,
+                'rate': rate,
+                'timestamp': timestamp,
+                'datetime': self.iso8601(timestamp),
+            })
+        keys = list(borrowRateHistories.keys())
+        for i in range(0, len(keys)):
+            key = keys[i]
+            borrowRateHistories[key] = self.filter_by_currency_since_limit(borrowRateHistories[key], key, since, limit)
+        return borrowRateHistories
+
+    def fetch_borrow_rate_history(self, code, since=None, limit=None, params={}):
+        codeObject = json.loads('{"ccy": "' + code + '"}')
+        histories = self.fetch_borrow_rate_histories(since, limit, codeObject, params)
+        if histories is None:
+            raise BadRequest(self.id + '.fetchBorrowRateHistory returned no data for ' + code)
+        else:
+            return histories
+
+    def modify_margin_helper(self, symbol, amount, type, params={}):
+        self.load_markets()
+        market = self.market(symbol)
+        posSide = self.safe_string(params, 'posSide', 'net')
+        params = self.omit(params, ['posSide'])
+        request = {
+            'instId': market['id'],
+            'amt': amount,
+            'type': type,
+            'posSide': posSide,
+        }
+        response = self.privatePostAccountPositionMarginBalance(self.extend(request, params))
+        #
+        #     {
+        #       "code": "0",
+        #       "data": [
+        #         {
+        #           "amt": "0.01",
+        #           "instId": "ETH-USD-SWAP",
+        #           "posSide": "net",
+        #           "type": "reduce"
+        #         }
+        #       ],
+        #       "msg": ""
+        #     }
+        #
+        data = self.safe_value(response, 'data', [])
+        entry = self.safe_value(data, 0, {})
+        errorCode = self.safe_string(response, 'code')
+        status = 'ok' if (errorCode == '0') else 'failed'
+        responseAmount = self.safe_number(entry, 'amt')
+        responseType = self.safe_string(entry, 'type')
+        marketId = self.safe_string(entry, 'instId')
+        responseMarket = self.safe_market(marketId, market)
+        code = responseMarket['base'] if responseMarket['inverse'] else responseMarket['quote']
+        symbol = responseMarket['symbol']
+        return {
+            'info': response,
+            'type': responseType,
+            'amount': responseAmount,
+            'code': code,
+            'symbol': symbol,
+            'status': status,
+        }
+
     def reduce_margin(self, symbol, amount, params={}):
         return self.modify_margin_helper(symbol, amount, 'reduce', params)
 
     def add_margin(self, symbol, amount, params={}):
         return self.modify_margin_helper(symbol, amount, 'add', params)
 
+    def fetch_leverage_tiers(self, symbol=None, params={}):
+        self.load_markets()
+        if symbol is None:
+            raise ArgumentsRequired(self.id + ' fetchLeverageTiers() requires a symbol argument')
+        market = self.market(symbol)
+        type = 'MARGIN' if market['spot'] else market['type'].upper()
+        uly = self.safe_string(market['info'], 'uly')
+        if not uly:
+            raise BadRequest(self.id + ' fetchLeverageTiers() cannot fetch leverage tiers for ' + symbol)
+        request = {
+            'instType': type,
+            'tdMode': self.safe_string(params, 'tdMode', 'isolated'),
+            'uly': uly,
+        }
+        if type == 'MARGIN':
+            request['instId'] = market['id']
+        response = self.publicGetPublicPositionTiers(self.extend(request, params))
+        #
+        #    {
+        #        "code": "0",
+        #        "data": [
+        #            {
+        #                "baseMaxLoan": "500",
+        #                "imr": "0.1",
+        #                "instId": "ETH-USDT",
+        #                "maxLever": "10",
+        #                "maxSz": "500",
+        #                "minSz": "0",
+        #                "mmr": "0.03",
+        #                "optMgnFactor": "0",
+        #                "quoteMaxLoan": "200000",
+        #                "tier": "1",
+        #                "uly": ""
+        #            },
+        #            ...
+        #        ]
+        #    }
+        #
+        data = self.safe_value(response, 'data')
+        brackets = []
+        for i in range(0, len(data)):
+            tier = data[i]
+            brackets.append({
+                'tier': self.safe_integer(tier, 'tier'),
+                'notionalCurrency': market['quote'],
+                'notionalFloor': self.safe_number(tier, 'minSz'),
+                'notionalCap': self.safe_number(tier, 'maxSz'),
+                'maintenanceMarginRate': self.safe_number(tier, 'mmr'),
+                'maxLeverage': self.safe_number(tier, 'maxLever'),
+                'info': tier,
+            })
+        result = {}
+        result[symbol] = brackets
+        return result
+
     def set_sandbox_mode(self, enable):
+        super(okx, self).set_sandbox_mode(enable)
         if enable:
             self.headers['x-simulated-trading'] = '1'
         elif 'x-simulated-trading' in self.headers:

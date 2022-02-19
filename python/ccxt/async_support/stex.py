@@ -60,6 +60,7 @@ class stex(Exchange):
                 'fetchIndexOHLCV': False,
                 'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
+                'fetchLeverageTiers': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
@@ -344,7 +345,10 @@ class stex(Exchange):
                 'fee': fee,
                 'precision': int(precision),
                 'limits': {
-                    'amount': {'min': self.parse_number(amountLimit), 'max': None},
+                    'amount': {
+                        'min': self.parse_number(amountLimit),
+                        'max': None,
+                    },
                     'deposit': {
                         'min': self.safe_number(currency, 'minimum_deposit_amount'),
                         'max': None,
@@ -439,8 +443,8 @@ class stex(Exchange):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_integer(market, 'market_precision'),
                     'amount': self.safe_integer(market, 'currency_precision'),
+                    'price': self.safe_integer(market, 'market_precision'),
                 },
                 'limits': {
                     'leverage': {

@@ -143,36 +143,41 @@ class bw extends Exchange {
     public function fetch_markets($params = array ()) {
         $response = yield $this->publicGetExchangeConfigControllerWebsiteMarketcontrollerGetByWebId ($params);
         //
-        //     {
-        //         "datas" => array(
-        //             {
-        //                 "orderNum":null,
-        //                 "leverEnable":true,
-        //                 "leverMultiple":10,
-        //                 "marketId":"291",
-        //                 "webId":"102",
-        //                 "serverId":"entrust_bw_23",
-        //                 "name":"eos_usdt",
-        //                 "leverType":"2",
-        //                 "buyerCurrencyId":"11",
-        //                 "sellerCurrencyId":"7",
-        //                 "amountDecimal":4,
-        //                 "priceDecimal":3,
-        //                 "minAmount":"0.0100000000",
-        //                 "state":1,
-        //                 "openTime":1572537600000,
-        //                 "defaultFee":"0.00200000",
-        //                 "createUid":null,
-        //                 "createTime":0,
-        //                 "modifyUid":null,
-        //                 "modifyTime":1574160113735,
-        //                 "combineMarketId":"",
-        //                 "isCombine":0,
-        //                 "isMining":0
-        //             }
-        //         ),
-        //         "resMsg" => array( "message":"success !", "method":null, "code":"1" )
-        //     }
+        //    {
+        //        resMsg => array(
+        //            method => null,
+        //            code => '1',
+        //            message => 'success !'
+        //        ),
+        //        datas => array(
+        //            array(
+        //                leverMultiple => '10',
+        //                amountDecimal => '4',
+        //                minAmount => '0.0100000000',
+        //                modifyUid => null,
+        //                buyerCurrencyId => '11',
+        //                isCombine => '0',
+        //                priceDecimal => '3',
+        //                combineMarketId => '',
+        //                openPrice => '0',
+        //                leverEnable => true,
+        //                marketId => '291',
+        //                serverId => 'entrust_bw_2',
+        //                isMining => '0',
+        //                webId => '102',
+        //                modifyTime => '1581595375498',
+        //                defaultFee => '0.00200000',
+        //                sellerCurrencyId => '7',
+        //                createTime => '0',
+        //                $state => '1',
+        //                $name => 'eos_usdt',
+        //                leverType => '2',
+        //                createUid => null,
+        //                orderNum => null,
+        //                openTime => '1574956800000'
+        //            ),
+        //        )
+        //    }
         //
         $markets = $this->safe_value($response, 'datas', array());
         $result = array();
@@ -186,60 +191,60 @@ class bw extends Exchange {
             $quote = $this->safe_currency_code($quote);
             $baseId = $this->safe_string($market, 'sellerCurrencyId');
             $quoteId = $this->safe_string($market, 'buyerCurrencyId');
-            $baseNumericId = intval($baseId);
-            $quoteNumericId = intval($quoteId);
-            $symbol = $base . '/' . $quote;
             $state = $this->safe_integer($market, 'state');
-            $active = ($state === 1);
             $fee = $this->safe_number($market, 'defaultFee');
             $result[] = array(
                 'id' => $id,
                 'numericId' => $numericId,
-                'symbol' => $symbol,
+                'symbol' => $base . '/' . $quote,
                 'base' => $base,
                 'quote' => $quote,
+                'settle' => null,
                 'baseId' => $baseId,
                 'quoteId' => $quoteId,
-                'baseNumericId' => $baseNumericId,
-                'quoteNumericId' => $quoteNumericId,
+                'settleId' => null,
+                'baseNumericId' => intval($baseId),
+                'quoteNumericId' => intval($quoteId),
                 'type' => 'spot',
                 'spot' => true,
                 'margin' => false,
-                'future' => false,
                 'swap' => false,
+                'future' => false,
                 'option' => false,
-                'optionType' => null,
-                'strike' => null,
+                'active' => ($state === 1),
+                'contract' => false,
                 'linear' => null,
                 'inverse' => null,
-                'contract' => false,
+                'taker' => $fee,
+                'maker' => $fee,
                 'contractSize' => null,
-                'settle' => null,
-                'settleId' => null,
                 'expiry' => null,
                 'expiryDatetime' => null,
-                'active' => $active,
-                'maker' => $fee,
-                'taker' => $fee,
-                'info' => $market,
+                'strike' => null,
+                'optionType' => null,
                 'precision' => array(
                     'amount' => $this->safe_integer($market, 'amountDecimal'),
                     'price' => $this->safe_integer($market, 'priceDecimal'),
                 ),
                 'limits' => array(
+                    'leverage' => array(
+                        'min' => null,
+                        'max' => null,
+                    ),
                     'amount' => array(
                         'min' => $this->safe_number($market, 'minAmount'),
                         'max' => null,
                     ),
                     'price' => array(
-                        'min' => 0,
+                        'min' => $this->parse_number('0'),
                         'max' => null,
                     ),
                     'cost' => array(
-                        'min' => 0,
+                        'min' => $this->parse_number('0'),
                         'max' => null,
                     ),
                 ),
+                'info' => $market,
             );
         }
         return $result;

@@ -45,6 +45,7 @@ class lbank(Exchange):
                 'fetchIndexOHLCV': False,
                 'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
+                'fetchLeverageTiers': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchOHLCV': True,
@@ -132,6 +133,17 @@ class lbank(Exchange):
 
     def fetch_markets(self, params={}):
         response = self.publicGetAccuracy(params)
+        #
+        #    [
+        #        {
+        #            "symbol": "btc_usdt",
+        #            "quantityAccuracy": "4",
+        #            "minTranQua": "0.0001",
+        #            "priceAccuracy": "2"
+        #        },
+        #        ...
+        #    ]
+        #
         result = []
         for i in range(0, len(response)):
             market = response[i]
@@ -149,8 +161,6 @@ class lbank(Exchange):
                 quoteId = parts[1]
             base = self.safe_currency_code(baseId)
             quote = self.safe_currency_code(quoteId)
-            precisionPrice = self.safe_string(market, 'priceAccuracy')
-            precisionAmount = self.safe_string(market, 'quantityAccuracy')
             result.append({
                 'id': id,
                 'symbol': base + '/' + quote,
@@ -176,8 +186,8 @@ class lbank(Exchange):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.parse_number(precisionPrice),
-                    'amount': self.parse_number(precisionAmount),
+                    'amount': self.safe_integer(market, 'quantityAccuracy'),
+                    'price': self.safe_integer(market, 'priceAccuracy'),
                 },
                 'limits': {
                     'leverage': {

@@ -59,6 +59,7 @@ class mexc(Exchange):
                 'fetchIndexOHLCV': True,
                 'fetchIsolatedPositions': None,
                 'fetchLeverage': None,
+                'fetchLeverageTiers': True,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': True,
                 'fetchMyTrades': True,
@@ -554,8 +555,8 @@ class mexc(Exchange):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_number(market, 'priceUnit'),
                     'amount': self.safe_number(market, 'volUnit'),
+                    'price': self.safe_number(market, 'priceUnit'),
                 },
                 'limits': {
                     'leverage': {
@@ -642,8 +643,8 @@ class mexc(Exchange):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.parse_number(self.parse_precision(priceScale)),
                     'amount': self.parse_number(self.parse_precision(quantityScale)),
+                    'price': self.parse_number(self.parse_precision(priceScale)),
                 },
                 'limits': {
                     'leverage': {
@@ -1484,7 +1485,7 @@ class mexc(Exchange):
         }
         response = self.fetch_positions(self.extend(request, params))
         firstPosition = self.safe_value(response, 0)
-        return firstPosition
+        return self.parse_position(firstPosition, market)
 
     def fetch_positions(self, symbols=None, params={}):
         self.load_markets()
@@ -1519,9 +1520,75 @@ class mexc(Exchange):
         #         ]
         #     }
         #
-        # todo add parsePositions, parsePosition
         data = self.safe_value(response, 'data', [])
-        return data
+        return self.parse_positions(data)
+
+    def parse_position(self, position, market=None):
+        #
+        #     {
+        #         "positionId": 1394650,
+        #         "symbol": "ETH_USDT",
+        #         "positionType": 1,
+        #         "openType": 1,
+        #         "state": 1,
+        #         "holdVol": 1,
+        #         "frozenVol": 0,
+        #         "closeVol": 0,
+        #         "holdAvgPrice": 1217.3,
+        #         "openAvgPrice": 1217.3,
+        #         "closeAvgPrice": 0,
+        #         "liquidatePrice": 1211.2,
+        #         "oim": 0.1290338,
+        #         "im": 0.1290338,
+        #         "holdFee": 0,
+        #         "realised": -0.0073,
+        #         "leverage": 100,
+        #         "createTime": 1609991676000,
+        #         "updateTime": 1609991676000,
+        #         "autoAddIm": False
+        #     }
+        #
+        market = self.safe_market(self.safe_string(position, 'symbol'), market)
+        symbol = market['symbol']
+        contracts = self.safe_string(position, 'holdVol')
+        entryPrice = self.safe_number(position, 'openAvgPrice')
+        initialMargin = self.safe_string(position, 'im')
+        rawSide = self.safe_string(position, 'positionType')
+        side = 'long' if (rawSide == '1') else 'short'
+        openType = self.safe_string(position, 'margin_mode')
+        marginType = 'isolated' if (openType == '1') else 'cross'
+        leverage = self.safe_string(position, 'leverage')
+        liquidationPrice = self.safe_number(position, 'liquidatePrice')
+        timestamp = self.safe_number(position, 'updateTime')
+        return {
+            'info': position,
+            'symbol': symbol,
+            'contracts': self.parse_number(contracts),
+            'contractSize': None,
+            'entryPrice': entryPrice,
+            'collateral': None,
+            'side': side,
+            'unrealizedProfit': None,
+            'leverage': self.parse_number(leverage),
+            'percentage': None,
+            'marginType': marginType,
+            'notional': None,
+            'markPrice': None,
+            'liquidationPrice': liquidationPrice,
+            'initialMargin': self.parse_number(initialMargin),
+            'initialMarginPercentage': None,
+            'maintenanceMargin': None,
+            'maintenanceMarginPercentage': None,
+            'marginRatio': None,
+            'timestamp': timestamp,
+            'datetime': self.iso8601(timestamp),
+        }
+
+    def parse_positions(self, positions):
+        result = []
+        for i in range(0, len(positions)):
+            result.append(self.parse_position(positions[i]))
+        return result
 
     def create_order(self, symbol, type, side, amount, price=None, params={}):
         self.load_markets()
@@ -2255,3 +2322,89 @@ class mexc(Exchange):
             })
         sorted = self.sort_by(rates, 'timestamp')
         return self.filter_by_symbol_since_limit(sorted, symbol, since, limit)
+
+    def fetch_leverage_tiers(self, symbol=None, params={}):
+        self.load_markets()
+        symbolDefined = (symbol is not None)
+        market = None
+        if symbolDefined:
+            market = self.market(symbol)
+            if not market['contract']:
+                raise BadRequest(self.id + ' fetchLeverageTiers() supports contract markets only')
+        response = self.contractPublicGetDetail(params)
+        #
+        #     {
+        #         "success":true,
+        #         "code":0,
+        #         "data":[
+        #             {
+        #                 "symbol":"BTC_USDT",
+        #                 "displayName":"BTC_USDT永续",
+        #                 "displayNameEn":"BTC_USDT SWAP",
+        #                 "positionOpenType":3,
+        #                 "baseCoin":"BTC",
+        #                 "quoteCoin":"USDT",
+        #                 "settleCoin":"USDT",
+        #                 "contractSize":0.0001,
+        #                 "minLeverage":1,
+        #                 "maxLeverage":125,
+        #                 "priceScale":2,
+        #                 "volScale":0,
+        #                 "amountScale":4,
+        #                 "priceUnit":0.5,
+        #                 "volUnit":1,
+        #                 "minVol":1,
+        #                 "maxVol":1000000,
+        #                 "bidLimitPriceRate":0.1,
+        #                 "askLimitPriceRate":0.1,
+        #                 "takerFeeRate":0.0006,
+        #                 "makerFeeRate":0.0002,
+        #                 "maintenanceMarginRate":0.004,
+        #                 "initialMarginRate":0.008,
+        #                 "riskBaseVol":10000,
+        #                 "riskIncrVol":200000,
+        #                 "riskIncrMmr":0.004,
+        #                 "riskIncrImr":0.004,
+        #                 "riskLevelLimit":5,
+        #                 "priceCoefficientVariation":0.1,
+        #                 "indexOrigin":["BINANCE","GATEIO","HUOBI","MXC"],
+        #                 "state":0,  # 0 enabled, 1 delivery, 2 completed, 3 offline, 4 pause
+        #                 "isNew":false,
+        #                 "isHot":true,
+        #                 "isHidden":false
+        #             },
+        #             ...
+        #         ]
+        #     }
+        #
+        result = {}
+        data = self.safe_value(response, 'data')
+        for i in range(0, len(data)):
+            item = data[i]
+            maintenanceMarginRate = self.safe_string(item, 'maintenanceMarginRate')
+            initialMarginRate = self.safe_string(item, 'initialMarginRate')
+            maxVol = self.safe_string(item, 'maxVol')
+            riskIncrVol = self.safe_string(item, 'riskIncrVol')
+            riskIncrMmr = self.safe_string(item, 'riskIncrMmr')
+            riskIncrImr = self.safe_string(item, 'riskIncrImr')
+            floor = '0'
+            tiers = []
+            quoteId = self.safe_string(item, 'quoteCoin')
+            while(Precise.string_lt(floor, maxVol)):
+                cap = Precise.string_add(floor, riskIncrVol)
+                tiers.append({
+                    'tier': self.parse_number(Precise.string_div(cap, riskIncrVol)),
+                    'notionalCurrency': self.safe_currency_code(quoteId),
+                    'notionalFloor': self.parse_number(floor),
+                    'notionalCap': self.parse_number(cap),
+                    'maintenanceMarginRate': self.parse_number(maintenanceMarginRate),
+                    'maxLeverage': self.parse_number(Precise.string_div('1', initialMarginRate)),
+                    'info': item,
+                })
+                initialMarginRate = Precise.string_add(initialMarginRate, riskIncrImr)
+                maintenanceMarginRate = Precise.string_add(maintenanceMarginRate, riskIncrMmr)
+                floor = cap
+            id = self.safe_string(item, 'symbol')
+            ccxtSymbol = self.safe_symbol(id)
+            result[ccxtSymbol] = tiers
+        return self.safe_value(result, symbol) if symbolDefined else result

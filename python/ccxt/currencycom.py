@@ -175,6 +175,7 @@ class currencycom(Exchange):
                 'FOX': 'Fox Corporation',
                 'GM': 'General Motors Co',
                 'IQ': 'iQIYI',
+                'OSK': 'Oshkosh',
                 'PLAY': "Dave & Buster's Entertainment",
             },
         })
@@ -303,7 +304,7 @@ class currencycom(Exchange):
                 maxPrice = self.safe_number(filter, 'maxPrice')
                 if (maxPrice is not None) and (maxPrice > 0):
                     limitPriceMax = maxPrice
-            precisionAmount = self.parse_precision(self.safe_string(market, 'baseAssetPrecision'))
+            precisionAmount = self.parse_number(self.parse_precision(self.safe_string(market, 'baseAssetPrecision')))
             limitAmount = {
                 'min': None,
                 'max': None,
@@ -344,20 +345,20 @@ class currencycom(Exchange):
                 'swap': False,
                 'future': False,
                 'option': False,
+                'active': active,
                 'contract': False,
                 'linear': None,
                 'inverse': None,
                 'taker': taker,
                 'maker': maker,
                 'contractSize': None,
-                'active': active,
                 'expiry': None,
                 'expiryDatetime': None,
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': precisionPrice,
                     'amount': precisionAmount,
+                    'price': precisionPrice,
                 },
                 'limits': {
                     'leverage': {

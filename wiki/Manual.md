@@ -171,7 +171,7 @@ The CCXT library currently supports the following 115 cryptocurrency exchange ma
 | [![upbit](https://user-images.githubusercontent.com/1294454/49245610-eeaabe00-f423-11e8-9cba-4b0aed794799.jpg)](https://upbit.com)                                                                | upbit              | [Upbit](https://upbit.com)                                                               | [![API Version 1](https://img.shields.io/badge/1-lightgray)](https://docs.upbit.com/docs/%EC%9A%94%EC%B2%AD-%EC%88%98-%EC%A0%9C%ED%95%9C)          |                                                                                                                             | [![CCXT Pro](https://img.shields.io/badge/CCXT-Pro-black)](https://ccxt.pro) |
 | [![vcc](https://user-images.githubusercontent.com/1294454/100545356-8427f500-326c-11eb-9539-7d338242d61b.jpg)](https://vcc.exchange?ref=l4xhrH)                                                   | vcc                | [VCC Exchange](https://vcc.exchange?ref=l4xhrH)                                          | [![API Version 3](https://img.shields.io/badge/3-lightgray)](https://vcc.exchange/api)                                                             |                                                                                                                             |                                                                              |
 | [![wavesexchange](https://user-images.githubusercontent.com/1294454/84547058-5fb27d80-ad0b-11ea-8711-78ac8b3c7f31.jpg)](https://waves.exchange)                                                   | wavesexchange      | [Waves.Exchange](https://waves.exchange)                                                 | [![API Version *](https://img.shields.io/badge/*-lightgray)](https://docs.waves.exchange)                                                          | [![CCXT Certified](https://img.shields.io/badge/CCXT-Certified-green.svg)](https://github.com/ccxt/ccxt/wiki/Certification) |                                                                              |
-| [![wazirx](https://user-images.githubusercontent.com/1294454/148647666-c109c20b-f8ac-472f-91c3-5f658cb90f49.jpeg)](https://wazirx.com)                                                            | wazirx             | [WazirX](https://wazirx.com)                                                             | [![API Version 2](https://img.shields.io/badge/2-lightgray)](https://docs.wazirx.com/#public-rest-api-for-wazirx)                                  |                                                                                                                             |                                                                              |
+| [![wazirx](https://user-images.githubusercontent.com/1294454/148647666-c109c20b-f8ac-472f-91c3-5f658cb90f49.jpeg)](https://wazirx.com/invite/k7rrnks5)                                            | wazirx             | [WazirX](https://wazirx.com/invite/k7rrnks5)                                             | [![API Version 2](https://img.shields.io/badge/2-lightgray)](https://docs.wazirx.com/#public-rest-api-for-wazirx)                                  |                                                                                                                             |                                                                              |
 | [![whitebit](https://user-images.githubusercontent.com/1294454/66732963-8eb7dd00-ee66-11e9-849b-10d9282bb9e0.jpg)](https://whitebit.com/referral/d9bdf40e-28f2-4b52-b2f9-cd1415d82963)            | whitebit           | [WhiteBit](https://whitebit.com/referral/d9bdf40e-28f2-4b52-b2f9-cd1415d82963)           | [![API Version 2](https://img.shields.io/badge/2-lightgray)](https://github.com/whitebit-exchange/api-docs)                                        |                                                                                                                             |                                                                              |
 | [![woo](https://user-images.githubusercontent.com/1294454/150730761-1a00e5e0-d28c-480f-9e65-089ce3e6ef3b.jpg)](https://referral.woo.org/BAJS6oNmZb3vi3RGA)                                        | woo                | [WOO X](https://referral.woo.org/BAJS6oNmZb3vi3RGA)                                      | [![API Version 1](https://img.shields.io/badge/1-lightgray)](https://docs.woo.org/)                                                                |                                                                                                                             |                                                                              |
 | [![xena](https://user-images.githubusercontent.com/51840849/87489843-bb469280-c64c-11ea-91aa-69c6326506af.jpg)](https://xena.exchange)                                                            | xena               | [Xena Exchange](https://xena.exchange)                                                   | [![API Version *](https://img.shields.io/badge/*-lightgray)](https://support.xena.exchange/support/solutions/44000808700)                          |                                                                                                                             |                                                                              |
@@ -1223,9 +1223,15 @@ We currently load spot markets with the unified `BASE/QUOTE` symbol schema into 
 
 **Please, check this announcement: [Unified contract naming conventions](https://github.com/ccxt/ccxt/issues/10931)**
 
-##### Futures Contracts
+CCXT supports the following types of derivative contracts:
 
-A futures market symbol consists of the underlying currency, the quoting currency, the settlement currency and an arbitrary identifier. Most often the identifier is the settlement date of the futures contract in `YYMMDD` format:
+- `future` – for expiring futures contracts that have a delivery/settlement date [](https://en.wikipedia.org/wiki/Futures_contract)
+- `swap` – for perpetual swap futures that don't have a delivery date [](https://en.wikipedia.org/wiki/Perpetual_futures)
+- `option` – for option contracts (https://en.wikipedia.org/wiki/Option_contract)
+
+##### Future
+
+A future market symbol consists of the underlying currency, the quoting currency, the settlement currency and an arbitrary identifier. Most often the identifier is the settlement date of the future contract in `YYMMDD` format:
 
 ```JavaScript
 //
@@ -1244,7 +1250,7 @@ A futures market symbol consists of the underlying currency, the quoting currenc
 'ETH/USDT:USDT-210625' // ETH/USDT futures contract settled in USDT (linear, vanilla) on 2021-06-25
 ```
 
-##### Perpetual Swaps (Perpetual Futures)
+##### Perpetual Swap (Perpetual Future)
 
 ```JavaScript
 // base asset or currency
@@ -1260,7 +1266,7 @@ A futures market symbol consists of the underlying currency, the quoting currenc
 'ETH/USDT:USDT' // ETH/USDT linear perpetual swap contract funded in USDT
 ```
 
-##### Options
+##### Option
 
 ```JavaScript
 //
@@ -2457,6 +2463,66 @@ The possible values in the `status` field are:
 - `'shutdown`' means the exchange was closed, and the `updated` field should contain the datetime of the shutdown
 - `'error'` means that either the exchange API is broken, or the implementation of the exchange in CCXT is broken
 - `'maintenance'` means regular maintenance, and the `eta` field should contain the datetime when the exchange is expected to be operational again
+
+## Fetch Leverage Tiers
+
+You can obtain the absolute maximum leverage for a market by accessing `market['limits']['leverage']['max']`.
+For many contracts, the maximum leverage will depend on the size of your position.
+You can access those limits via the `fetchLeverageTiers()` method.
+
+```Javascript
+fetchLeverageTiers(symbol, params = {})
+```
+
+The `fetchLeverageTiers()` method can be used to obtain the maximum leverage for a market at varying position sizes. It can also be used to obtain the maintenance margin rate, and the max tradeable amount for a market when that information is not available from the market object:
+
+### Fetch Leverage Tiers Structure
+
+The `fetchLeverageTiers()` method will return a structure like shown below:
+
+```JavaScript
+{
+    'BNB/USDT': [
+        {
+            "tier": 1,                       // tier index
+            "notionalCurrency": "USDT",      // the currency that notionalFloor and notionalCap are in
+            "notionalFloor": 0,              // the lowest amount of this tier // stake = 0.0
+            "notionalCap": 10000,            // the highest amount of this tier // max stake amount at 75x leverage = 133.33333333333334
+            "maintenanceMarginRate": 0.0065, // maintenance margin rate
+            "maxLeverage": 75,               // max available leverage for this market when the value of the trade is > notionalFloor and < notionalCap
+            "info": { ... }                  // Response from exchange
+        },
+        {
+            "tier": 2,
+            "notionalCurrency": "USDT",
+            "notionalFloor": 10000,          // min stake amount at 50x leverage = 200.0
+            "notionalCap": 50000,            // max stake amount at 50x leverage = 1000.0
+            "maintenanceMarginRatio": 0.01,
+            "maxLeverage": 50,
+            "info": { ... },
+        },
+        ...
+        {
+            "tier": 9,
+            "notionalCurrency": "USDT",
+            "notionalFloor": 20000000,
+            "notionalCap": 50000000,
+            "maintenanceMarginRate": 0.5,
+            "maxLeverage": 1,
+            "info": { ... },
+        },
+    ]
+    ...
+  ],
+}
+```
+
+In the example above:
+
+- stakes below 133.33       = a max leverage of 75
+- stakes from 200 + 1000    = a max leverage of 50
+- a stake amount of 150     = a max leverage of (10000 / 150)   = 66.66
+- stakes between 133.33-200 = a max leverage of (10000 / stake) = 50.01 -> 74.99
 
 # Private API
 

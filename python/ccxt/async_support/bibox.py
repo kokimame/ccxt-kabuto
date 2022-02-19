@@ -246,21 +246,21 @@ class bibox(Exchange):
                 'type': type,
                 'spot': spot,
                 'margin': False,
-                'future': False,
                 'swap': False,
+                'future': False,
                 'option': False,
+                'active': None,
                 'contract': False,
                 'linear': None,
                 'inverse': None,
                 'contractSize': None,
-                'active': None,
                 'expiry': None,
                 'expiryDatetime': None,
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': self.safe_number(market, 'decimal'),
-                    'amount': self.safe_number(market, 'amount_scale'),
+                    'amount': self.safe_integer(market, 'amount_scale'),
+                    'price': self.safe_integer(market, 'decimal'),
                 },
                 'limits': {
                     'leverage': {
@@ -287,15 +287,12 @@ class bibox(Exchange):
     def parse_ticker(self, ticker, market=None):
         # we don't set values that are not defined by the exchange
         timestamp = self.safe_integer(ticker, 'timestamp')
-        symbol = None
-        if market is not None:
-            symbol = market['symbol']
-        else:
-            baseId = self.safe_string(ticker, 'coin_symbol')
-            quoteId = self.safe_string(ticker, 'currency_symbol')
-            base = self.safe_currency_code(baseId)
-            quote = self.safe_currency_code(quoteId)
-            symbol = base + '/' + quote
+        marketId = None
+        baseId = self.safe_string(ticker, 'coin_symbol')
+        quoteId = self.safe_string(ticker, 'currency_symbol')
+        if (baseId is not None) and (quoteId is not None):
+            marketId = baseId + '_' + quoteId
+        market = self.safe_market(marketId, market)
         last = self.safe_string(ticker, 'last')
         change = self.safe_string(ticker, 'change')
         baseVolume = self.safe_string_2(ticker, 'vol', 'vol24H')
@@ -303,7 +300,7 @@ class bibox(Exchange):
         if percentage is not None:
             percentage = percentage.replace('%', '')
         return self.safe_ticker({
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'high': self.safe_string(ticker, 'high'),
@@ -348,34 +345,23 @@ class bibox(Exchange):
         timestamp = self.safe_integer_2(trade, 'time', 'createdAt')
         side = self.safe_integer_2(trade, 'side', 'order_side')
         side = 'buy' if (side == 1) else 'sell'
-        symbol = None
-        if market is None:
-            marketId = self.safe_string(trade, 'pair')
-            if marketId is None:
-                baseId = self.safe_string(trade, 'coin_symbol')
-                quoteId = self.safe_string(trade, 'currency_symbol')
-                if (baseId is not None) and (quoteId is not None):
-                    marketId = baseId + '_' + quoteId
-            if marketId in self.markets_by_id:
-                market = self.markets_by_id[marketId]
-        if market is not None:
-            symbol = market['symbol']
-        fee = None
-        feeCostString = self.safe_string(trade, 'fee')
-        feeCurrency = self.safe_string(trade, 'fee_symbol')
-        if feeCurrency is not None:
-            if feeCurrency in self.currencies_by_id:
-                feeCurrency = self.currencies_by_id[feeCurrency]['code']
-            else:
-                feeCurrency = self.safe_currency_code(feeCurrency)
-        feeRate = None  # todo: deduce from market if market is defined
+        marketId = self.safe_string(trade, 'pair')
+        if marketId is None:
+            baseId = self.safe_string(trade, 'coin_symbol')
+            quoteId = self.safe_string(trade, 'currency_symbol')
+            if (baseId is not None) and (quoteId is not None):
+                marketId = baseId + '_' + quoteId
+        market = self.safe_market(marketId, market)
         priceString = self.safe_string(trade, 'price')
         amountString = self.safe_string(trade, 'amount')
+        fee = None
+        feeCostString = self.safe_string(trade, 'fee')
         if feeCostString is not None:
+            feeCurrencyId = self.safe_string(trade, 'fee_symbol')
+            feeCurrencyCode = self.safe_currency_code(feeCurrencyId)
             fee = {
                 'cost': Precise.string_neg(feeCostString),
-                'currency': feeCurrency,
-                'rate': feeRate,
+                'currency': feeCurrencyCode,
             }
         id = self.safe_string(trade, 'id')
         return self.safe_trade({
@@ -384,7 +370,7 @@ class bibox(Exchange):
             'order': None,  # Bibox does not have it(documented) yet
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': 'limit',
             'takerOrMaker': None,
             'side': side,
@@ -957,17 +943,12 @@ class bibox(Exchange):
         return self.parse_order(order)
 
     def parse_order(self, order, market=None):
-        symbol = None
-        if market is None:
-            marketId = None
-            baseId = self.safe_string(order, 'coin_symbol')
-            quoteId = self.safe_string(order, 'currency_symbol')
-            if (baseId is not None) and (quoteId is not None):
-                marketId = baseId + '_' + quoteId
-            if marketId in self.markets_by_id:
-                market = self.markets_by_id[marketId]
-        if market is not None:
-            symbol = market['symbol']
+        marketId = None
+        baseId = self.safe_string(order, 'coin_symbol')
+        quoteId = self.safe_string(order, 'currency_symbol')
+        if (baseId is not None) and (quoteId is not None):
+            marketId = baseId + '_' + quoteId
+        market = self.safe_market(marketId, market)
         rawType = self.safe_string(order, 'order_type')
         type = 'market' if (rawType == '1') else 'limit'
         timestamp = self.safe_integer(order, 'createdAt')
@@ -980,7 +961,7 @@ class bibox(Exchange):
         side = 'buy' if (rawSide == '1') else 'sell'
         status = self.parse_order_status(self.safe_string(order, 'status'))
         id = self.safe_string(order, 'id')
-        feeCost = self.safe_number(order, 'fee')
+        feeCost = self.safe_string(order, 'fee')
         fee = None
         if feeCost is not None:
             fee = {
@@ -994,7 +975,7 @@ class bibox(Exchange):
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'lastTradeTimestamp': None,
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': type,
             'timeInForce': None,
             'postOnly': None,

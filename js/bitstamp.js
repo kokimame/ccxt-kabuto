@@ -230,6 +230,8 @@ module.exports = class bitstamp extends Exchange {
                         'shib_address/',
                         'amp_withdrawal/',
                         'amp_address/',
+                        'sgb_withdrawal/',
+                        'sgb_address/',
                         'transfer-to-main/',
                         'transfer-from-main/',
                         'withdrawal-requests/',
@@ -335,6 +337,20 @@ module.exports = class bitstamp extends Exchange {
 
     async fetchMarkets (params = {}) {
         const response = await this.fetchMarketsFromCache (params);
+        //
+        //     [
+        //         {
+        //             "trading": "Enabled",
+        //             "base_decimals": 8,
+        //             "url_symbol": "btcusd",
+        //             "name": "BTC/USD",
+        //             "instant_and_market_orders": "Enabled",
+        //             "minimum_order": "20.0 USD",
+        //             "counter_decimals": 2,
+        //             "description": "Bitcoin / U.S. dollar"
+        //         }
+        //     ]
+        //
         const result = [];
         for (let i = 0; i < response.length; i++) {
             const market = response[i];
@@ -344,17 +360,12 @@ module.exports = class bitstamp extends Exchange {
             const quoteId = quote.toLowerCase ();
             base = this.safeCurrencyCode (base);
             quote = this.safeCurrencyCode (quote);
-            const amountPrecisionString = this.safeString (market, 'base_decimals');
-            const pricePrecisionString = this.safeString (market, 'counter_decimals');
-            const amountLimit = this.parsePrecision (amountPrecisionString);
-            const priceLimit = this.parsePrecision (pricePrecisionString);
             const minimumOrder = this.safeString (market, 'minimum_order');
             const parts = minimumOrder.split (' ');
-            const cost = parts[0];
-            // let [ cost, currency ] = market['minimum_order'].split (' ');
-            const trading = this.safeString (market, 'trading');
+            const status = this.safeString (market, 'trading');
             result.push ({
                 'id': this.safeString (market, 'url_symbol'),
+                'marketId': baseId + '_' + quoteId,
                 'symbol': base + '/' + quote,
                 'base': base,
                 'quote': quote,
@@ -362,14 +373,13 @@ module.exports = class bitstamp extends Exchange {
                 'baseId': baseId,
                 'quoteId': quoteId,
                 'settleId': undefined,
-                'marketId': baseId + '_' + quoteId,
                 'type': 'spot',
                 'spot': true,
                 'margin': false,
                 'future': false,
                 'swap': false,
                 'option': false,
-                'active': (trading === 'Enabled'),
+                'active': (status === 'Enabled'),
                 'contract': false,
                 'linear': undefined,
                 'inverse': undefined,
@@ -379,8 +389,8 @@ module.exports = class bitstamp extends Exchange {
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'price': parseInt (pricePrecisionString),
-                    'amount': parseInt (amountPrecisionString),
+                    'amount': this.safeInteger (market, 'base_decimals'),
+                    'price': this.safeInteger (market, 'counter_decimals'),
                 },
                 'limits': {
                     'leverage': {
@@ -388,15 +398,15 @@ module.exports = class bitstamp extends Exchange {
                         'max': undefined,
                     },
                     'amount': {
-                        'min': this.parseNumber (amountLimit),
+                        'min': undefined,
                         'max': undefined,
                     },
                     'price': {
-                        'min': this.parseNumber (priceLimit),
+                        'min': undefined,
                         'max': undefined,
                     },
                     'cost': {
-                        'min': this.parseNumber (cost),
+                        'min': this.safeNumber (parts, 0),
                         'max': undefined,
                     },
                 },

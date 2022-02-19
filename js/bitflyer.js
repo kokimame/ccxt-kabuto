@@ -19,14 +19,15 @@ module.exports = class bitflyer extends Exchange {
             'has': {
                 'CORS': undefined,
                 'spot': true,
-                'margin': undefined, // has but unimplemented
-                'swap': undefined, // has but unimplemented
-                'future': undefined, // has but unimplemented
+                'margin': false,
+                'swap': undefined, // has but not fully implemented
+                'future': undefined, // has but not fully implemented
                 'option': false,
                 'cancelOrder': true,
                 'createOrder': true,
                 'fetchBalance': true,
                 'fetchClosedOrders': 'emulated',
+                'fetchDeposits': true,
                 'fetchMarkets': true,
                 'fetchMyTrades': true,
                 'fetchOpenOrders': 'emulated',
@@ -36,6 +37,7 @@ module.exports = class bitflyer extends Exchange {
                 'fetchPositions': true,
                 'fetchTicker': true,
                 'fetchTrades': true,
+                'fetchWithdrawals': true,
                 'withdraw': true,
             },
             'urls': {
@@ -99,10 +101,59 @@ module.exports = class bitflyer extends Exchange {
         });
     }
 
+    parseExpiryDate (expiry) {
+        const day = expiry.slice (0, 2);
+        const monthName = expiry.slice (2, 5);
+        const year = expiry.slice (5, 9);
+        const months = {
+            'JAN': '01',
+            'FEB': '02',
+            'MAR': '03',
+            'APR': '04',
+            'MAY': '05',
+            'JUN': '06',
+            'JUL': '07',
+            'AUG': '08',
+            'SEP': '09',
+            'OCT': '10',
+            'NOV': '11',
+            'DEC': '12',
+        };
+        const month = this.safeString (months, monthName);
+        return this.parse8601 (year + '-' + month + '-' + day + 'T00:00:00Z');
+    }
+
     async fetchMarkets (params = {}) {
         const jp_markets = await this.publicGetGetmarkets (params);
+        //
+        //     [
+        //         // spot
+        //         { "product_code": "BTC_JPY", "market_type": "Spot" },
+        //         { "product_code": "BCH_BTC", "market_type": "Spot" },
+        //         // forex swap
+        //         { "product_code": "FX_BTC_JPY", "market_type": "FX" },
+        //         // future
+        //         {
+        //             "product_code": "BTCJPY11FEB2022",
+        //             "alias": "BTCJPY_MAT1WK",
+        //             "market_type": "Futures",
+        //         },
+        //     ];
+        //
         const us_markets = await this.publicGetGetmarketsUsa (params);
+        //
+        //     [
+        //         { "product_code": "BTC_USD", "market_type": "Spot" },
+        //         { "product_code": "BTC_JPY", "market_type": "Spot" },
+        //     ];
+        //
         const eu_markets = await this.publicGetGetmarketsEu (params);
+        //
+        //     [
+        //         { "product_code": "BTC_EUR", "market_type": "Spot" },
+        //         { "product_code": "BTC_JPY", "market_type": "Spot" },
+        //     ];
+        //
         let markets = this.arrayConcat (jp_markets, us_markets);
         markets = this.arrayConcat (markets, eu_markets);
         const result = [];
@@ -110,49 +161,96 @@ module.exports = class bitflyer extends Exchange {
             const market = markets[i];
             const id = this.safeString (market, 'product_code');
             const currencies = id.split ('_');
+            const marketType = this.safeString (market, 'market_type');
+            const swap = (marketType === 'FX');
+            const future = (marketType === 'Futures');
+            const spot = !swap && !future;
+            let type = 'spot';
+            let settle = undefined;
             let baseId = undefined;
             let quoteId = undefined;
-            let base = undefined;
-            let quote = undefined;
-            const numCurrencies = currencies.length;
-            if (numCurrencies === 1) {
-                baseId = id.slice (0, 3);
-                quoteId = id.slice (3, 6);
-            } else if (numCurrencies === 2) {
-                baseId = currencies[0];
-                quoteId = currencies[1];
-            } else {
-                baseId = currencies[1];
-                quoteId = currencies[2];
-            }
-            base = this.safeCurrencyCode (baseId);
-            quote = this.safeCurrencyCode (quoteId);
-            const symbol = (numCurrencies === 2) ? (base + '/' + quote) : id;
-            const fees = this.safeValue (this.fees, symbol, this.fees['trading']);
-            let maker = this.safeValue (fees, 'maker', this.fees['trading']['maker']);
-            let taker = this.safeValue (fees, 'taker', this.fees['trading']['taker']);
-            let spot = true;
-            let future = false;
-            let type = 'spot';
-            if (('alias' in market) || (currencies[0] === 'FX')) {
+            let expiry = undefined;
+            if (spot) {
+                baseId = this.safeString (currencies, 0);
+                quoteId = this.safeString (currencies, 1);
+            } else if (swap) {
+                type = 'swap';
+                baseId = this.safeString (currencies, 1);
+                quoteId = this.safeString (currencies, 2);
+            } else if (future) {
+                const alias = this.safeString (market, 'alias');
+                const splitAlias = alias.split ('_');
+                const currencyIds = this.safeString (splitAlias, 0);
+                baseId = currencyIds.slice (0, -3);
+                quoteId = currencyIds.slice (-3);
+                const splitId = id.split (currencyIds);
+                const expiryDate = this.safeString (splitId, 1);
+                expiry = this.parseExpiryDate (expiryDate);
                 type = 'future';
-                future = true;
-                spot = false;
+            }
+            const base = this.safeCurrencyCode (baseId);
+            const quote = this.safeCurrencyCode (quoteId);
+            let symbol = base + '/' + quote;
+            let taker = this.fees['trading']['taker'];
+            let maker = this.fees['trading']['maker'];
+            const contract = swap || future;
+            if (contract) {
                 maker = 0.0;
                 taker = 0.0;
+                settle = 'JPY';
+                symbol = symbol + ':' + settle;
+                if (future) {
+                    symbol = symbol + '-' + this.yymmdd (expiry);
+                }
             }
             result.push ({
                 'id': id,
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
+                'settle': settle,
                 'baseId': baseId,
                 'quoteId': quoteId,
-                'maker': maker,
-                'taker': taker,
+                'settleId': undefined,
                 'type': type,
                 'spot': spot,
+                'margin': false,
+                'swap': swap,
                 'future': future,
+                'option': false,
+                'active': true,
+                'contract': contract,
+                'linear': spot ? undefined : true,
+                'inverse': spot ? undefined : false,
+                'taker': taker,
+                'maker': maker,
+                'contractSize': undefined,
+                'expiry': expiry,
+                'expiryDatetime': this.iso8601 (expiry),
+                'strike': undefined,
+                'optionType': undefined,
+                'precision': {
+                    'amount': undefined,
+                    'price': undefined,
+                },
+                'limits': {
+                    'leverage': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'amount': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'price': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                    'cost': {
+                        'min': undefined,
+                        'max': undefined,
+                    },
+                },
                 'info': market,
             });
         }
@@ -515,6 +613,152 @@ module.exports = class bitflyer extends Exchange {
         return {
             'info': response,
             'id': id,
+        };
+    }
+
+    async fetchDeposits (code = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        let currency = undefined;
+        const request = {};
+        if (code !== undefined) {
+            currency = this.currency (code);
+        }
+        if (limit !== undefined) {
+            request['count'] = limit; // default 100
+        }
+        const response = await this.privateGetGetcoinins (this.extend (request, params));
+        // [
+        //   {
+        //     "id": 100,
+        //     "order_id": "CDP20151227-024141-055555",
+        //     "currency_code": "BTC",
+        //     "amount": 0.00002,
+        //     "address": "1WriteySQufKZ2pVuM1oMhPrTtTVFq35j",
+        //     "tx_hash": "9f92ee65a176bb9545f7becb8706c50d07d4cee5ffca34d8be3ef11d411405ae",
+        //     "status": "COMPLETED",
+        //     "event_date": "2015-11-27T08:59:20.301"
+        //   }
+        // ]
+        return this.parseTransactions (response, currency, since, limit);
+    }
+
+    async fetchWithdrawals (code = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        let currency = undefined;
+        const request = {};
+        if (code !== undefined) {
+            currency = this.currency (code);
+        }
+        if (limit !== undefined) {
+            request['count'] = limit; // default 100
+        }
+        const response = await this.privateGetGetcoinouts (this.extend (request, params));
+        //
+        // [
+        //   {
+        //     "id": 500,
+        //     "order_id": "CWD20151224-014040-077777",
+        //     "currency_code": "BTC",
+        //     "amount": 0.1234,
+        //     "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        //     "tx_hash": "724c07dfd4044abcb390b0412c3e707dd5c4f373f0a52b3bd295ce32b478c60a",
+        //     "fee": 0.0005,
+        //     "additional_fee": 0.0001,
+        //     "status": "COMPLETED",
+        //     "event_date": "2015-12-24T01:40:40.397"
+        //   }
+        // ]
+        //
+        return this.parseTransactions (response, currency, since, limit);
+    }
+
+    parseDepositStatus (status) {
+        const statuses = {
+            'PENDING': 'pending',
+            'COMPLETED': 'ok',
+        };
+        return this.safeString (statuses, status, status);
+    }
+
+    parseWithdrawalStatus (status) {
+        const statuses = {
+            'PENDING': 'pending',
+            'COMPLETED': 'ok',
+        };
+        return this.safeString (statuses, status, status);
+    }
+
+    parseTransaction (transaction, currency = undefined) {
+        //
+        // fetchDeposits
+        //
+        //   {
+        //     "id": 100,
+        //     "order_id": "CDP20151227-024141-055555",
+        //     "currency_code": "BTC",
+        //     "amount": 0.00002,
+        //     "address": "1WriteySQufKZ2pVuM1oMhPrTtTVFq35j",
+        //     "tx_hash": "9f92ee65a176bb9545f7becb8706c50d07d4cee5ffca34d8be3ef11d411405ae",
+        //     "status": "COMPLETED",
+        //     "event_date": "2015-11-27T08:59:20.301"
+        //   }
+        //
+        // fetchWithdrawals
+        //
+        //   {
+        //     "id": 500,
+        //     "order_id": "CWD20151224-014040-077777",
+        //     "currency_code": "BTC",
+        //     "amount": 0.1234,
+        //     "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        //     "tx_hash": "724c07dfd4044abcb390b0412c3e707dd5c4f373f0a52b3bd295ce32b478c60a",
+        //     "fee": 0.0005,
+        //     "additional_fee": 0.0001,
+        //     "status": "COMPLETED",
+        //     "event_date": "2015-12-24T01:40:40.397"
+        //   }
+        //
+        const id = this.safeString (transaction, 'id');
+        const address = this.safeString (transaction, 'address');
+        const currencyId = this.safeString (transaction, 'currency_code');
+        const code = this.safeCurrencyCode (currencyId, currency);
+        const timestamp = this.parse8601 (this.safeString (transaction, 'event_date'));
+        const amount = this.safeNumber (transaction, 'amount');
+        const txId = this.safeString (transaction, 'tx_hash');
+        const rawStatus = this.safeString (transaction, 'status');
+        let type = undefined;
+        let status = undefined;
+        let fee = undefined;
+        if ('fee' in transaction) {
+            type = 'withdrawal';
+            status = this.parseWithdrawalStatus (rawStatus);
+            const feeCost = this.safeNumber (transaction, 'fee');
+            const additionalFee = this.safeNumber (transaction, 'additional_fee');
+            fee = { 'currency': code, 'cost': feeCost + additionalFee };
+        } else {
+            type = 'deposit';
+            status = this.parseDepositStatus (rawStatus);
+        }
+        return {
+            'info': transaction,
+            'id': id,
+            'txid': txId,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'network': undefined,
+            'address': address,
+            'addressTo': address,
+            'addressFrom': undefined,
+            'tag': undefined,
+            'tagTo': undefined,
+            'tagFrom': undefined,
+            'type': type,
+            'amount': amount,
+            'currency': code,
+            'status': status,
+            'updated': undefined,
+            'internal': undefined,
+            'fee': fee,
         };
     }
 

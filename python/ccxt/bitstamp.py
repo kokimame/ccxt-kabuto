@@ -251,6 +251,8 @@ class bitstamp(Exchange):
                         'shib_address/',
                         'amp_withdrawal/',
                         'amp_address/',
+                        'sgb_withdrawal/',
+                        'sgb_address/',
                         'transfer-to-main/',
                         'transfer-from-main/',
                         'withdrawal-requests/',
@@ -355,6 +357,20 @@ class bitstamp(Exchange):
 
     def fetch_markets(self, params={}):
         response = self.fetch_markets_from_cache(params)
+        #
+        #     [
+        #         {
+        #             "trading": "Enabled",
+        #             "base_decimals": 8,
+        #             "url_symbol": "btcusd",
+        #             "name": "BTC/USD",
+        #             "instant_and_market_orders": "Enabled",
+        #             "minimum_order": "20.0 USD",
+        #             "counter_decimals": 2,
+        #             "description": "Bitcoin / U.S. dollar"
+        #         }
+        #     ]
+        #
         result = []
         for i in range(0, len(response)):
             market = response[i]
@@ -364,17 +380,12 @@ class bitstamp(Exchange):
             quoteId = quote.lower()
             base = self.safe_currency_code(base)
             quote = self.safe_currency_code(quote)
-            amountPrecisionString = self.safe_string(market, 'base_decimals')
-            pricePrecisionString = self.safe_string(market, 'counter_decimals')
-            amountLimit = self.parse_precision(amountPrecisionString)
-            priceLimit = self.parse_precision(pricePrecisionString)
             minimumOrder = self.safe_string(market, 'minimum_order')
             parts = minimumOrder.split(' ')
-            cost = parts[0]
-            # cost, currency = market['minimum_order'].split(' ')
-            trading = self.safe_string(market, 'trading')
+            status = self.safe_string(market, 'trading')
             result.append({
                 'id': self.safe_string(market, 'url_symbol'),
+                'marketId': baseId + '_' + quoteId,
                 'symbol': base + '/' + quote,
                 'base': base,
                 'quote': quote,
@@ -382,14 +393,13 @@ class bitstamp(Exchange):
                 'baseId': baseId,
                 'quoteId': quoteId,
                 'settleId': None,
-                'marketId': baseId + '_' + quoteId,
                 'type': 'spot',
                 'spot': True,
                 'margin': False,
                 'future': False,
                 'swap': False,
                 'option': False,
-                'active': (trading == 'Enabled'),
+                'active': (status == 'Enabled'),
                 'contract': False,
                 'linear': None,
                 'inverse': None,
@@ -399,8 +409,8 @@ class bitstamp(Exchange):
                 'strike': None,
                 'optionType': None,
                 'precision': {
-                    'price': int(pricePrecisionString),
-                    'amount': int(amountPrecisionString),
+                    'amount': self.safe_integer(market, 'base_decimals'),
+                    'price': self.safe_integer(market, 'counter_decimals'),
                 },
                 'limits': {
                     'leverage': {
@@ -408,15 +418,15 @@ class bitstamp(Exchange):
                         'max': None,
                     },
                     'amount': {
-                        'min': self.parse_number(amountLimit),
+                        'min': None,
                         'max': None,
                     },
                     'price': {
-                        'min': self.parse_number(priceLimit),
+                        'min': None,
                         'max': None,
                     },
                     'cost': {
-                        'min': self.parse_number(cost),
+                        'min': self.safe_number(parts, 0),
                         'max': None,
                     },
                 },
