@@ -1,10 +1,16 @@
 import ccxt
+import json
+import os
 
+with open(f'{os.environ["HOME"]}/.kabuto/credentials.json', 'r') as f:
+    credential = json.load(f)
 
 print(ccxt.__version__)
 
 kabus = ccxt.kabus({
-    'apiKey': '9324ca46e9d645c9afa0e9ad9a8584d4'
+    'ipaddr': credential['KABUSAPI_HOST'],
+    'password': credential['KABUSAPI_LIVE_PW']
 })
 
-print(kabus.fetch_ticker('167030018@24'))
+response = kabus.fetch_ticker('8897@1')
+print(response)
