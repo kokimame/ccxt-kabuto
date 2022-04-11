@@ -119,6 +119,11 @@ module.exports = class kabus extends Exchange {
         return result;
     }
 
+    async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        return [];
+    }
+
     async fetchTicker (symbol, params = {}) {
         await this.loadMarkets ();
         const request = {

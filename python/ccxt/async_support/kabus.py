@@ -122,6 +122,10 @@ class kabus(Exchange):
             })
         return result
 
+    async def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        await self.load_markets()
+        return []
+
     async def fetch_ticker(self, symbol, params={}):
         await self.load_markets()
         request = {

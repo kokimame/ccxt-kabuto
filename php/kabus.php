@@ -125,6 +125,11 @@ class kabus extends Exchange {
         return $result;
     }
 
+    public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
+        $this->load_markets();
+        return array();
+    }
+
     public function fetch_ticker($symbol, $params = array ()) {
         $this->load_markets();
         $request = array(
