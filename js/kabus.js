@@ -71,6 +71,8 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        // Returns a list of stock code and its basic properties for trading
+        // No API access for now
         const markets = [
             '8306@1',
             '4689@1',
@@ -81,13 +83,13 @@ module.exports = class kabus extends Exchange {
             '5191@1',
             '6440@1',
             '8897@1',
-            '167030018@24',
+            '167060018@24',
         ];
         const result = [];
         for (let i = 0; i < markets.length; i++) {
             result.push ({
                 'id': i,
-                'symbol': markets[i],
+                'symbol': markets[i] + '/JPY',
                 'base': 'JPY',
                 'quote': 'JPY',
                 'maker': 0.001,

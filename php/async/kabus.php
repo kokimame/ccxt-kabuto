@@ -77,6 +77,8 @@ class kabus extends Exchange {
     }
 
     public function fetch_markets($params = array ()) {
+        // Returns a list of stock code and its basic properties for trading
+        // No API access for now
         $markets = array(
             '8306@1',
             '4689@1',
@@ -87,13 +89,13 @@ class kabus extends Exchange {
             '5191@1',
             '6440@1',
             '8897@1',
-            '167030018@24',
+            '167060018@24',
         );
         $result = array();
         for ($i = 0; $i < count($markets); $i++) {
             $result[] = array(
                 'id' => $i,
-                'symbol' => $markets[$i],
+                'symbol' => $markets[$i] . '/JPY',
                 'base' => 'JPY',
                 'quote' => 'JPY',
                 'maker' => 0.001,

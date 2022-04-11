@@ -76,6 +76,8 @@ class kabus(Exchange):
         })
 
     def fetch_markets(self, params={}):
+        # Returns a list of stock code and its basic properties for trading
+        # No API access for now
         markets = [
             '8306@1',
             '4689@1',
@@ -86,13 +88,13 @@ class kabus(Exchange):
             '5191@1',
             '6440@1',
             '8897@1',
-            '167030018@24',
+            '167060018@24',
         ]
         result = []
         for i in range(0, len(markets)):
             result.append({
                 'id': i,
-                'symbol': markets[i],
+                'symbol': markets[i] + '/JPY',
                 'base': 'JPY',
                 'quote': 'JPY',
                 'maker': 0.001,
