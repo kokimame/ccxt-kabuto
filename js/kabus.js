@@ -44,6 +44,10 @@ module.exports = class kabus extends Exchange {
                 'fetchOrderBook': true,
                 'fetchTicker': true,
             },
+            'precision': {
+                'amount': undefined,
+                'price': undefined,
+            },
             'api': {
                 'public': {
                     'get': [
@@ -57,7 +61,7 @@ module.exports = class kabus extends Exchange {
             },
             'requiredCredentials': {
                 'ipaddr': true,
-                'password': true,
+                'password': false,
                 'apiKey': false,
                 'secret': false,
                 'uid': false,
@@ -132,7 +136,7 @@ module.exports = class kabus extends Exchange {
         return this.publicGetBoardSymbol (this.extend (request, params));
     }
 
-    async fetchOrderBook (symbol, params = {}) {
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
         const ticker = await this.fetchTicker (symbol, params);
         const keys = Object.keys (ticker);
         const buys = [];

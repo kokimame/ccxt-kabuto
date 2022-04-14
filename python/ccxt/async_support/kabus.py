@@ -50,6 +50,10 @@ class kabus(Exchange):
                 'fetchOrderBook': True,
                 'fetchTicker': True,
             },
+            'precision': {
+                'amount': None,
+                'price': None,
+            },
             'api': {
                 'public': {
                     'get': [
@@ -63,7 +67,7 @@ class kabus(Exchange):
             },
             'requiredCredentials': {
                 'ipaddr': True,
-                'password': True,
+                'password': False,
                 'apiKey': False,
                 'secret': False,
                 'uid': False,
@@ -133,7 +137,7 @@ class kabus(Exchange):
         }
         return self.publicGetBoardSymbol(self.extend(request, params))
 
-    async def fetch_order_book(self, symbol, params={}):
+    async def fetch_order_book(self, symbol, limit=None, params={}):
         ticker = await self.fetch_ticker(symbol, params)
         keys = list(ticker.keys())
         buys = []
@@ -172,3 +176,16 @@ class kabus(Exchange):
             'Content-Type': 'application/json',
         }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
+
+    async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        # ohlcvs = await self.fetch_ohlcvc(symbol, timeframe, since, limit, params)
+        async def update_ohlcvs():
+            with open('kabuto_price.json', 'r') as f:
+                dummy_data = json.load(f)
+
+            self.dummy_data = dummy_data
+            ohlcvs = dummy_data[symbol]
+            return ohlcvs
+
+        ohlcvs = await update_ohlcvs()
+        return [ohlcv[0:-1] for ohlcv in ohlcvs]

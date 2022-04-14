@@ -50,6 +50,10 @@ class kabus extends Exchange {
                 'fetchOrderBook' => true,
                 'fetchTicker' => true,
             ),
+            'precision' => array(
+                'amount' => null,
+                'price' => null,
+            ),
             'api' => array(
                 'public' => array(
                     'get' => array(
@@ -63,7 +67,7 @@ class kabus extends Exchange {
             ),
             'requiredCredentials' => array(
                 'ipaddr' => true,
-                'password' => true,
+                'password' => false,
                 'apiKey' => false,
                 'secret' => false,
                 'uid' => false,
@@ -138,7 +142,7 @@ class kabus extends Exchange {
         return $this->publicGetBoardSymbol (array_merge($request, $params));
     }
 
-    public function fetch_order_book($symbol, $params = array ()) {
+    public function fetch_order_book($symbol, $limit = null, $params = array ()) {
         $ticker = $this->fetch_ticker($symbol, $params);
         $keys = is_array($ticker) ? array_keys($ticker) : array();
         $buys = array();

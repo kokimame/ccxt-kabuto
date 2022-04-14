@@ -50,6 +50,10 @@ class kabus(Exchange):
                 'fetchOrderBook': True,
                 'fetchTicker': True,
             },
+            'precision': {
+                'amount': None,
+                'price': None,
+            },
             'api': {
                 'public': {
                     'get': [
@@ -63,7 +67,7 @@ class kabus(Exchange):
             },
             'requiredCredentials': {
                 'ipaddr': True,
-                'password': True,
+                'password': False,
                 'apiKey': False,
                 'secret': False,
                 'uid': False,
@@ -128,12 +132,13 @@ class kabus(Exchange):
 
     def fetch_ticker(self, symbol, params={}):
         self.load_markets()
+        symbol = symbol[:-4]
         request = {
             'symbol': symbol,
         }
         return self.publicGetBoardSymbol(self.extend(request, params))
 
-    def fetch_order_book(self, symbol, params={}):
+    def fetch_order_book(self, symbol, limit=None, params={}):
         ticker = self.fetch_ticker(symbol, params)
         keys = list(ticker.keys())
         buys = []
