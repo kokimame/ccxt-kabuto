@@ -181,7 +181,12 @@ class kabus extends Exchange {
     public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
         $symbol = mb_substr($symbol, 0, -4 - 0);
         $response = yield $this->fetch('http://127.0.0.1:8999/charts/' . $symbol . '/JPY/1m', 'GET');
-        return json_decode($response[$symbol], $as_associative_array = true);
+        $ohlcvs = json_decode($response[$symbol], $as_associative_array = true);
+        $data = array();
+        for ($i = 0; $i < count($ohlcvs); $i++) {
+            $data[] = mb_substr($ohlcvs[$i], 0, -1 - 0);
+        }
+        return $data;
     }
 
     public function fetch_token() {

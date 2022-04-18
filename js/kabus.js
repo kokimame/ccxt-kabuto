@@ -175,7 +175,12 @@ module.exports = class kabus extends Exchange {
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         symbol = symbol.slice (0, -4);
         const response = await this.fetch ('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET');
-        return JSON.parse (response[symbol]);
+        const ohlcvs = JSON.parse (response[symbol]);
+        const data = [];
+        for (let i = 0; i < ohlcvs.length; i++) {
+            data.push (ohlcvs[i].slice (0, -1));
+        }
+        return data;
     }
 
     fetchToken () {

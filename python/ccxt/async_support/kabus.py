@@ -171,7 +171,11 @@ class kabus(Exchange):
     async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
         symbol = symbol[0:-4]
         response = await self.fetch('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET')
-        return json.loads(response[symbol])
+        ohlcvs = json.loads(response[symbol])
+        data = []
+        for i in range(0, len(ohlcvs)):
+            data.append(ohlcvs[i][0:-1])
+        return data
 
     def fetch_token(self):
         url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
