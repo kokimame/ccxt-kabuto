@@ -47,11 +47,13 @@ class kabus extends Exchange {
                 'swap' => null,
                 'future' => null,
                 'option' => null,
+                'fetchOHLCV' => true,
                 'fetchOrderBook' => true,
                 'fetchTicker' => true,
+                'fetchTickers' => true,
             ),
             'precision' => array(
-                'amount' => null,
+                'amount' => -2,
                 'price' => null,
             ),
             'api' => array(
@@ -76,6 +78,12 @@ class kabus extends Exchange {
                 'privateKey' => false, // a "0x"-prefixed hexstring private key for a wallet
                 'walletAddress' => false, // the wallet address "0x"-prefixed hexstring
                 'token' => false, // reserved for HTTP auth in some cases
+            ),
+            'fees' => array(
+                'trading' => array(
+                    'maker' => $this->parse_number('0.0'),
+                    'taker' => $this->parse_number('0.0'),
+                ),
             ),
         ));
     }
@@ -136,10 +144,16 @@ class kabus extends Exchange {
 
     public function fetch_ticker($symbol, $params = array ()) {
         yield $this->load_markets();
+        $symbol = mb_substr($symbol, 0, -4 - 0);
         $request = array(
             'symbol' => $symbol,
         );
         return $this->publicGetBoardSymbol (array_merge($request, $params));
+    }
+
+    public function fetch_tickers($symbol, $params = array ()) {
+        // Coming soon
+        return null;
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {
@@ -158,6 +172,21 @@ class kabus extends Exchange {
         }
         $orderbook = array( 'bids' => $buys, 'asks' => $sells );
         return $this->parse_order_book($orderbook, $symbol);
+    }
+
+    public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
+        // # ohlcvs = yield self.fetch_ohlcvc($symbol, $timeframe, $since, $limit, $params)
+        // async def update_ohlcvs():
+        //     with open('kabuto_price.json', 'r') as f:
+        //         dummy_data = json.load(f)
+        //     self.dummy_data = dummy_data
+        //     ohlcvs = dummy_data[$symbol]
+        //     return ohlcvs
+        // ohlcvs = yield update_ohlcvs()
+        // return [ohlcv[0:-1] for ohlcv in ohlcvs]
+        $symbol = mb_substr($symbol, 0, -4 - 0);
+        $response = yield $this->fetch('http://127.0.0.1:8999/charts/' . $symbol . '/JPY/1m', 'GET');
+        return json_decode($response[$symbol], $as_associative_array = true);
     }
 
     public function fetch_token() {

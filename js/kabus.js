@@ -41,11 +41,13 @@ module.exports = class kabus extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'fetchOHLCV': true,
                 'fetchOrderBook': true,
                 'fetchTicker': true,
+                'fetchTickers': true,
             },
             'precision': {
-                'amount': undefined,
+                'amount': -2,
                 'price': undefined,
             },
             'api': {
@@ -70,6 +72,12 @@ module.exports = class kabus extends Exchange {
                 'privateKey': false, // a "0x"-prefixed hexstring private key for a wallet
                 'walletAddress': false, // the wallet address "0x"-prefixed hexstring
                 'token': false, // reserved for HTTP auth in some cases
+            },
+            'fees': {
+                'trading': {
+                    'maker': this.parseNumber ('0.0'),
+                    'taker': this.parseNumber ('0.0'),
+                },
             },
         });
     }
@@ -130,10 +138,16 @@ module.exports = class kabus extends Exchange {
 
     async fetchTicker (symbol, params = {}) {
         await this.loadMarkets ();
+        symbol = symbol.slice (0, -4);
         const request = {
             'symbol': symbol,
         };
         return this.publicGetBoardSymbol (this.extend (request, params));
+    }
+
+    async fetchTickers (symbol, params = {}) {
+        // Coming soon
+        return null;
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
@@ -152,6 +166,12 @@ module.exports = class kabus extends Exchange {
         }
         const orderbook = { 'bids': buys, 'asks': sells };
         return this.parseOrderBook (orderbook, symbol);
+    }
+
+    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        symbol = symbol.slice (0, -4);
+        const response = await this.fetch ('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET');
+        return JSON.parse (response[symbol]);
     }
 
     fetchToken () {
