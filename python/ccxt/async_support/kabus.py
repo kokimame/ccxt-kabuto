@@ -51,6 +51,7 @@ class kabus(Exchange):
                 'fetchOrderBook': True,
                 'fetchTicker': True,
                 'fetchTickers': True,
+                'registerWhitelist': True,
             },
             'precision': {
                 'amount': -2,
@@ -64,6 +65,9 @@ class kabus(Exchange):
                     ],
                     'post': [
                         'token',
+                    ],
+                    'put': [
+                        'register',
                     ],
                 },
             },
@@ -165,19 +169,9 @@ class kabus(Exchange):
         return self.parse_order_book(orderbook, symbol)
 
     async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
-        #  # ohlcvs = await self.fetch_ohlcvc(symbol, timeframe, since, limit, params)
-        # async def update_ohlcvs():
-        #     with open('kabuto_price.json', 'r') as f:
-        #         dummy_data = json.load(f)
-        #     self.dummy_data = dummy_data
-        #     ohlcvs = dummy_data[symbol]
-        #     return ohlcvs
-        # ohlcvs = await update_ohlcvs()
-        # return [ohlcv[0:-1] for ohlcv in ohlcvs]
         symbol = symbol[0:-4]
         response = await self.fetch('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET')
-        ohlcvs = json.loads(response[symbol])
-        return [ohlcv[0:-1] for ohlcv in ohlcvs]
+        return json.loads(response[symbol])
 
     def fetch_token(self):
         url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
@@ -192,6 +186,22 @@ class kabus(Exchange):
         else:
             # Temporary placeholder for exception when it fails to get a new token
             raise ExchangeError()
+
+    def parse_ticker(self, pair):
+        identifier = pair.split('/')[0]
+        symbol = identifier.split('@')[0]
+        exchange = int(identifier.split('@')[1])
+        return {'Symbol': symbol, 'Exchange': exchange}
+
+    async def register_whitelist(self, whitelist):
+        # url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/register'
+        symbols = {'Symbols': []}
+        for i in range(0, len(whitelist)):
+            tickerVal = self.parse_ticker(whitelist[i])
+            symbols['Symbols'].append(tickerVal)
+        body = json.dumps(symbols)
+        response = self.fetch2('register', 'public', 'PUT', {}, None, body, {}, {})
+        return response['RegistList']
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
         self.check_required_credentials()

@@ -51,6 +51,7 @@ class kabus extends Exchange {
                 'fetchOrderBook' => true,
                 'fetchTicker' => true,
                 'fetchTickers' => true,
+                'registerWhitelist' => true,
             ),
             'precision' => array(
                 'amount' => -2,
@@ -64,6 +65,9 @@ class kabus extends Exchange {
                     ),
                     'post' => array(
                         'token',
+                    ),
+                    'put' => array(
+                        'register',
                     ),
                 ),
             ),
@@ -175,15 +179,6 @@ class kabus extends Exchange {
     }
 
     public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
-        // # ohlcvs = yield self.fetch_ohlcvc($symbol, $timeframe, $since, $limit, $params)
-        // async def update_ohlcvs():
-        //     with open('kabuto_price.json', 'r') as f:
-        //         dummy_data = json.load(f)
-        //     self.dummy_data = dummy_data
-        //     ohlcvs = dummy_data[$symbol]
-        //     return ohlcvs
-        // ohlcvs = yield update_ohlcvs()
-        // return [ohlcv[0:-1] for ohlcv in ohlcvs]
         $symbol = mb_substr($symbol, 0, -4 - 0);
         $response = yield $this->fetch('http://127.0.0.1:8999/charts/' . $symbol . '/JPY/1m', 'GET');
         return json_decode($response[$symbol], $as_associative_array = true);
@@ -203,6 +198,25 @@ class kabus extends Exchange {
             // Temporary placeholder for exception when it fails to get a new token
             throw new ExchangeError();
         }
+    }
+
+    public function parse_ticker($pair) {
+        $identifier = explode('/', $pair)[0];
+        $symbol = explode('@', $identifier)[0];
+        $exchange = intval(explode('@', $identifier)[1]);
+        return array( 'Symbol' => $symbol, 'Exchange' => $exchange );
+    }
+
+    public function register_whitelist($whitelist) {
+        // $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . '/register';
+        $symbols = array( 'Symbols' => array() );
+        for ($i = 0; $i < count($whitelist); $i++) {
+            $tickerVal = $this->parse_ticker($whitelist[$i]);
+            $symbols['Symbols'][] = $tickerVal;
+        }
+        $body = json_encode ($symbols);
+        $response = $this->fetch2('register', 'public', 'PUT', array(), null, $body, array(), array());
+        return $response['RegistList'];
     }
 
     public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {

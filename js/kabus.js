@@ -45,6 +45,7 @@ module.exports = class kabus extends Exchange {
                 'fetchOrderBook': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
+                'registerWhitelist': true,
             },
             'precision': {
                 'amount': -2,
@@ -58,6 +59,9 @@ module.exports = class kabus extends Exchange {
                     ],
                     'post': [
                         'token',
+                    ],
+                    'put': [
+                        'register',
                     ],
                 },
             },
@@ -188,6 +192,25 @@ module.exports = class kabus extends Exchange {
             // Temporary placeholder for exception when it fails to get a new token
             throw new ExchangeError ();
         }
+    }
+
+    parseTicker (pair) {
+        const identifier = pair.split ('/')[0];
+        const symbol = identifier.split ('@')[0];
+        const exchange = parseInt (identifier.split ('@')[1]);
+        return { 'Symbol': symbol, 'Exchange': exchange };
+    }
+
+    async registerWhitelist (whitelist) {
+        // const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/register';
+        const symbols = { 'Symbols': [] };
+        for (let i = 0; i < whitelist.length; i++) {
+            const tickerVal = this.parseTicker (whitelist[i]);
+            symbols['Symbols'].push (tickerVal);
+        }
+        const body = JSON.stringify (symbols);
+        const response = this.fetch2 ('register', 'public', 'PUT', {}, undefined, body, {}, {});
+        return response['RegistList'];
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {

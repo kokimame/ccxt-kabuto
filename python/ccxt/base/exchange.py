@@ -498,6 +498,8 @@ class Exchange(object):
                     inner_kwargs['params'] = params
                 if context is not None:
                     inner_kwargs['context'] = params
+                if 'body' in params:
+                    inner_kwargs['body'] = params['body']
                 return entry(_self, **inner_kwargs)
             return inner
         to_bind = partialer()
