@@ -47,8 +47,15 @@ class kabus(Exchange):
                 'swap': None,
                 'future': None,
                 'option': None,
+                'fetchOHLCV': True,
                 'fetchOrderBook': True,
                 'fetchTicker': True,
+                'fetchTickers': True,
+                'registerWhitelist': True,
+            },
+            'precision': {
+                'amount': -2,
+                'price': None,
             },
             'api': {
                 'public': {
@@ -59,11 +66,14 @@ class kabus(Exchange):
                     'post': [
                         'token',
                     ],
+                    'put': [
+                        'register',
+                    ],
                 },
             },
             'requiredCredentials': {
                 'ipaddr': True,
-                'password': True,
+                'password': False,
                 'apiKey': False,
                 'secret': False,
                 'uid': False,
@@ -73,9 +83,17 @@ class kabus(Exchange):
                 'walletAddress': False,  # the wallet address "0x"-prefixed hexstring
                 'token': False,  # reserved for HTTP auth in some cases
             },
+            'fees': {
+                'trading': {
+                    'maker': self.parse_number('0.0'),
+                    'taker': self.parse_number('0.0'),
+                },
+            },
         })
 
     async def fetch_markets(self, params={}):
+        # Returns a list of stock code and its basic properties for trading
+        # No API access for now
         markets = [
             '8306@1',
             '4689@1',
@@ -86,13 +104,13 @@ class kabus(Exchange):
             '5191@1',
             '6440@1',
             '8897@1',
-            '167030018@24',
+            '167060018@24',
         ]
         result = []
         for i in range(0, len(markets)):
             result.append({
                 'id': i,
-                'symbol': markets[i],
+                'symbol': markets[i] + '/JPY',
                 'base': 'JPY',
                 'quote': 'JPY',
                 'maker': 0.001,
@@ -120,14 +138,23 @@ class kabus(Exchange):
             })
         return result
 
+    async def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        await self.load_markets()
+        return []
+
     async def fetch_ticker(self, symbol, params={}):
         await self.load_markets()
+        symbol = symbol[0:-4]
         request = {
             'symbol': symbol,
         }
         return self.publicGetBoardSymbol(self.extend(request, params))
 
-    async def fetch_order_book(self, symbol, params={}):
+    async def fetch_tickers(self, symbol, params={}):
+        # Coming soon
+        return None
+
+    async def fetch_order_book(self, symbol, limit=None, params={}):
         ticker = await self.fetch_ticker(symbol, params)
         keys = list(ticker.keys())
         buys = []
@@ -140,6 +167,15 @@ class kabus(Exchange):
                 sells.append([ticker[key]['Price'], ticker[key]['Qty']])
         orderbook = {'bids': buys, 'asks': sells}
         return self.parse_order_book(orderbook, symbol)
+
+    async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        symbol = symbol[0:-4]
+        response = await self.fetch('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET')
+        ohlcvs = json.loads(response[symbol])
+        data = []
+        for i in range(0, len(ohlcvs)):
+            data.append(ohlcvs[i][0:-1])
+        return data
 
     def fetch_token(self):
         url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
@@ -154,6 +190,22 @@ class kabus(Exchange):
         else:
             # Temporary placeholder for exception when it fails to get a new token
             raise ExchangeError()
+
+    def parse_ticker(self, pair):
+        identifier = pair.split('/')[0]
+        symbol = identifier.split('@')[0]
+        exchange = int(identifier.split('@')[1])
+        return {'Symbol': symbol, 'Exchange': exchange}
+
+    async def register_whitelist(self, whitelist):
+        # url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/register'
+        symbols = {'Symbols': []}
+        for i in range(0, len(whitelist)):
+            tickerVal = self.parse_ticker(whitelist[i])
+            symbols['Symbols'].append(tickerVal)
+        body = json.dumps(symbols)
+        response = self.fetch2('register', 'public', 'PUT', {}, None, body, {}, {})
+        return response['RegistList']
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
         self.check_required_credentials()

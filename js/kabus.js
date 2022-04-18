@@ -41,8 +41,15 @@ module.exports = class kabus extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'fetchOHLCV': true,
                 'fetchOrderBook': true,
                 'fetchTicker': true,
+                'fetchTickers': true,
+                'registerWhitelist': true,
+            },
+            'precision': {
+                'amount': -2,
+                'price': undefined,
             },
             'api': {
                 'public': {
@@ -53,11 +60,14 @@ module.exports = class kabus extends Exchange {
                     'post': [
                         'token',
                     ],
+                    'put': [
+                        'register',
+                    ],
                 },
             },
             'requiredCredentials': {
                 'ipaddr': true,
-                'password': true,
+                'password': false,
                 'apiKey': false,
                 'secret': false,
                 'uid': false,
@@ -67,10 +77,18 @@ module.exports = class kabus extends Exchange {
                 'walletAddress': false, // the wallet address "0x"-prefixed hexstring
                 'token': false, // reserved for HTTP auth in some cases
             },
+            'fees': {
+                'trading': {
+                    'maker': this.parseNumber ('0.0'),
+                    'taker': this.parseNumber ('0.0'),
+                },
+            },
         });
     }
 
     async fetchMarkets (params = {}) {
+        // Returns a list of stock code and its basic properties for trading
+        // No API access for now
         const markets = [
             '8306@1',
             '4689@1',
@@ -81,13 +99,13 @@ module.exports = class kabus extends Exchange {
             '5191@1',
             '6440@1',
             '8897@1',
-            '167030018@24',
+            '167060018@24',
         ];
         const result = [];
         for (let i = 0; i < markets.length; i++) {
             result.push ({
                 'id': i,
-                'symbol': markets[i],
+                'symbol': markets[i] + '/JPY',
                 'base': 'JPY',
                 'quote': 'JPY',
                 'maker': 0.001,
@@ -117,15 +135,26 @@ module.exports = class kabus extends Exchange {
         return result;
     }
 
+    async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        return [];
+    }
+
     async fetchTicker (symbol, params = {}) {
         await this.loadMarkets ();
+        symbol = symbol.slice (0, -4);
         const request = {
             'symbol': symbol,
         };
         return this.publicGetBoardSymbol (this.extend (request, params));
     }
 
-    async fetchOrderBook (symbol, params = {}) {
+    async fetchTickers (symbol, params = {}) {
+        // Coming soon
+        return null;
+    }
+
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
         const ticker = await this.fetchTicker (symbol, params);
         const keys = Object.keys (ticker);
         const buys = [];
@@ -143,6 +172,17 @@ module.exports = class kabus extends Exchange {
         return this.parseOrderBook (orderbook, symbol);
     }
 
+    async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        symbol = symbol.slice (0, -4);
+        const response = await this.fetch ('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET');
+        const ohlcvs = JSON.parse (response[symbol]);
+        const data = [];
+        for (let i = 0; i < ohlcvs.length; i++) {
+            data.push (ohlcvs[i].slice (0, -1));
+        }
+        return data;
+    }
+
     fetchToken () {
         const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/token';
         const headers = {
@@ -157,6 +197,25 @@ module.exports = class kabus extends Exchange {
             // Temporary placeholder for exception when it fails to get a new token
             throw new ExchangeError ();
         }
+    }
+
+    parseTicker (pair) {
+        const identifier = pair.split ('/')[0];
+        const symbol = identifier.split ('@')[0];
+        const exchange = parseInt (identifier.split ('@')[1]);
+        return { 'Symbol': symbol, 'Exchange': exchange };
+    }
+
+    async registerWhitelist (whitelist) {
+        // const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/register';
+        const symbols = { 'Symbols': [] };
+        for (let i = 0; i < whitelist.length; i++) {
+            const tickerVal = this.parseTicker (whitelist[i]);
+            symbols['Symbols'].push (tickerVal);
+        }
+        const body = JSON.stringify (symbols);
+        const response = this.fetch2 ('register', 'public', 'PUT', {}, undefined, body, {}, {});
+        return response['RegistList'];
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
