@@ -41,13 +41,13 @@ module.exports = class kabus extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'createOrder': true,
                 'fetchBalance': true,
                 'fetchOHLCV': true,
                 'fetchOrderBook': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'registerWhitelist': true,
-                'createOrder': true,
             },
             'precision': {
                 'amount': -2,
@@ -90,6 +90,40 @@ module.exports = class kabus extends Exchange {
                 },
             },
         });
+    }
+
+    sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        // Attach header and other necessary parameters to the API request.
+        // This is called before a REST API request thrown to the server.
+        // TODO: Handle differently 'public' call and 'private' call to improve security.
+        this.checkRequiredCredentials ();
+        if (!this.apiKey) {
+            this.apiKey = this.fetchToken ();
+        }
+        const request = '/' + this.implodeParams (path, params);
+        const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + request;
+        headers = {
+            'X-API-KEY': this.apiKey,
+            'Content-Type': 'application/json',
+        };
+        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    }
+
+    fetchToken () {
+        // Fetch one-time access token for Kabus API
+        const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/token';
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        // JSON.parse() is needed to load json module in transpiled Python script
+        const body = JSON.stringify ({ 'APIPassword': this.password });
+        const response = this.fetch (url, 'POST', headers, body);
+        if (response['ResultCode'] === '0') {
+            return response['Token'];
+        } else {
+            // Temporary placeholder for exception when it fails to get a new token
+            throw new ExchangeError ();
+        }
     }
 
     async fetchMarkets (params = {}) {
@@ -165,6 +199,14 @@ module.exports = class kabus extends Exchange {
         return [];
     }
 
+    parseTicker (pair) {
+        // Parse ticker string to get symbol and exchange code
+        const identifier = pair.split ('/')[0];
+        const symbol = identifier.split ('@')[0];
+        const exchange = parseInt (identifier.split ('@')[1]);
+        return { 'Symbol': symbol, 'Exchange': exchange };
+    }
+
     async fetchTicker (symbol, params = {}) {
         // Fetch board informatio of a single symbol.
         await this.loadMarkets ();
@@ -211,31 +253,6 @@ module.exports = class kabus extends Exchange {
         return data;
     }
 
-    fetchToken () {
-        // Fetch one-time access token for Kabus API
-        const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/token';
-        const headers = {
-            'Content-Type': 'application/json',
-        };
-        // JSON.parse() is needed to load json module in transpiled Python script
-        const body = JSON.stringify ({ 'APIPassword': this.password });
-        const response = this.fetch (url, 'POST', headers, body);
-        if (response['ResultCode'] === '0') {
-            return response['Token'];
-        } else {
-            // Temporary placeholder for exception when it fails to get a new token
-            throw new ExchangeError ();
-        }
-    }
-
-    parseTicker (pair) {
-        // Parse ticker string to get symbol and exchange code
-        const identifier = pair.split ('/')[0];
-        const symbol = identifier.split ('@')[0];
-        const exchange = parseInt (identifier.split ('@')[1]);
-        return { 'Symbol': symbol, 'Exchange': exchange };
-    }
-
     async registerWhitelist (whitelist) {
         // Register whitelist symbols.
         // FIXME: This cannnot be use from Worker due to the nature of the bot process.
@@ -248,22 +265,5 @@ module.exports = class kabus extends Exchange {
         const body = JSON.stringify (symbols);
         const response = this.fetch2 ('register', 'public', 'PUT', {}, undefined, body, {}, {});
         return response['RegistList'];
-    }
-
-    sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        // Attach header and other necessary parameters to the API request.
-        // This is called before a REST API request thrown to the server.
-        // TODO: Handle differently 'public' call and 'private' call to improve security.
-        this.checkRequiredCredentials ();
-        if (!this.apiKey) {
-            this.apiKey = this.fetchToken ();
-        }
-        const request = '/' + this.implodeParams (path, params);
-        const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + request;
-        headers = {
-            'X-API-KEY': this.apiKey,
-            'Content-Type': 'application/json',
-        };
-        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 };
