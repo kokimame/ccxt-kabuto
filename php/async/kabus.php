@@ -47,6 +47,7 @@ class kabus extends Exchange {
                 'swap' => null,
                 'future' => null,
                 'option' => null,
+                'fetchBalance' => true,
                 'fetchOHLCV' => true,
                 'fetchOrderBook' => true,
                 'fetchTicker' => true,
@@ -61,13 +62,17 @@ class kabus extends Exchange {
                 'public' => array(
                     'get' => array(
                         'board/{symbol}',
-                        '',
                     ),
                     'post' => array(
                         'token',
                     ),
                     'put' => array(
                         'register',
+                    ),
+                ),
+                'private' => array(
+                    'get' => array(
+                        'wallet/cash',
                     ),
                 ),
             ),
@@ -93,7 +98,7 @@ class kabus extends Exchange {
     }
 
     public function fetch_markets($params = array ()) {
-        // Returns a list of stock code and its basic properties for trading
+        // Return a list of stock code and its basic properties for trading
         // No API access for now
         $markets = array(
             '8306@1',
@@ -141,12 +146,32 @@ class kabus extends Exchange {
         return $result;
     }
 
+    public function parse_balance($response) {
+        // Parse and organize balance information.
+        $result = array( 'info' => $response );
+        $account = $this->account();
+        $account['free'] = $this->safe_float($response, 'StockAccountWallet');
+        $result['JPY'] = $account;
+        return $result;
+    }
+
+    public function fetch_balance($params = array ()) {
+        // Fetch account balance information
+        yield $this->load_markets();
+        $response = yield $this->privateGetWalletCash ($params);
+        // {
+        //      'StockAccountWallet' => '497120.0'
+        // }
+        return $this->parse_balance($response);
+    }
+
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
         yield $this->load_markets();
         return array();
     }
 
     public function fetch_ticker($symbol, $params = array ()) {
+        // Fetch board informatio of a single $symbol->
         yield $this->load_markets();
         $symbol = mb_substr($symbol, 0, -4 - 0);
         $request = array(
@@ -161,6 +186,7 @@ class kabus extends Exchange {
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {
+        // Fetch order book information of a single $symbol
         $ticker = yield $this->fetch_ticker($symbol, $params);
         $keys = is_array($ticker) ? array_keys($ticker) : array();
         $buys = array();
@@ -179,6 +205,7 @@ class kabus extends Exchange {
     }
 
     public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
+        // Fetch latest OHLCV $data of a single $symbol from the local PriceServer
         $symbol = mb_substr($symbol, 0, -4 - 0);
         $response = yield $this->fetch('http://127.0.0.1:8999/charts/' . $symbol . '/JPY/1m', 'GET');
         $ohlcvs = json_decode($response[$symbol], $as_associative_array = true);
@@ -190,6 +217,7 @@ class kabus extends Exchange {
     }
 
     public function fetch_token() {
+        // Fetch one-time access token for Kabus API
         $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . '/token';
         $headers = array(
             'Content-Type' => 'application/json',
@@ -206,6 +234,7 @@ class kabus extends Exchange {
     }
 
     public function parse_ticker($pair) {
+        // Parse ticker string to get $symbol and $exchange code
         $identifier = explode('/', $pair)[0];
         $symbol = explode('@', $identifier)[0];
         $exchange = intval(explode('@', $identifier)[1]);
@@ -213,7 +242,9 @@ class kabus extends Exchange {
     }
 
     public function register_whitelist($whitelist) {
-        // $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . '/register';
+        // Register $whitelist $symbols->
+        // FIXME => This cannnot be use from Worker due to the nature of the bot process.
+        // PriceServer has a function for the same purpose and that is used instead.
         $symbols = array( 'Symbols' => array() );
         for ($i = 0; $i < count($whitelist); $i++) {
             $tickerVal = $this->parse_ticker($whitelist[$i]);
@@ -225,6 +256,9 @@ class kabus extends Exchange {
     }
 
     public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
+        // Attach header and other necessary parameters to the API $request->
+        // This is called before a REST API $request thrown to the server.
+        // TODO => Handle differently 'public' call and 'private' call to improve security.
         $this->check_required_credentials();
         if (!$this->apiKey) {
             $this->apiKey = $this->fetch_token();

@@ -47,6 +47,7 @@ class kabus(Exchange):
                 'swap': None,
                 'future': None,
                 'option': None,
+                'fetchBalance': True,
                 'fetchOHLCV': True,
                 'fetchOrderBook': True,
                 'fetchTicker': True,
@@ -61,13 +62,17 @@ class kabus(Exchange):
                 'public': {
                     'get': [
                         'board/{symbol}',
-                        '',
                     ],
                     'post': [
                         'token',
                     ],
                     'put': [
                         'register',
+                    ],
+                },
+                'private': {
+                    'get': [
+                        'wallet/cash',
                     ],
                 },
             },
@@ -92,7 +97,7 @@ class kabus(Exchange):
         })
 
     def fetch_markets(self, params={}):
-        # Returns a list of stock code and its basic properties for trading
+        # Return a list of stock code and its basic properties for trading
         # No API access for now
         markets = [
             '8306@1',
@@ -138,11 +143,29 @@ class kabus(Exchange):
             })
         return result
 
+    def parse_balance(self, response):
+        # Parse and organize balance information.
+        result = {'info': response}
+        account = self.account()
+        account['free'] = self.safe_float(response, 'StockAccountWallet')
+        result['JPY'] = account
+        return result
+
+    def fetch_balance(self, params={}):
+        # Fetch account balance information
+        self.load_markets()
+        response = self.privateGetWalletCash(params)
+        # {
+        #      'StockAccountWallet': '497120.0'
+        # }
+        return self.parse_balance(response)
+
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
         self.load_markets()
         return []
 
     def fetch_ticker(self, symbol, params={}):
+        # Fetch board informatio of a single symbol.
         self.load_markets()
         symbol = symbol[0:-4]
         request = {
@@ -155,6 +178,7 @@ class kabus(Exchange):
         return None
 
     def fetch_order_book(self, symbol, limit=None, params={}):
+        # Fetch order book information of a single symbol
         ticker = self.fetch_ticker(symbol, params)
         keys = list(ticker.keys())
         buys = []
@@ -169,6 +193,7 @@ class kabus(Exchange):
         return self.parse_order_book(orderbook, symbol)
 
     def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        # Fetch latest OHLCV data of a single symbol from the local PriceServer
         symbol = symbol[0:-4]
         response = self.fetch('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET')
         ohlcvs = json.loads(response[symbol])
@@ -178,6 +203,7 @@ class kabus(Exchange):
         return data
 
     def fetch_token(self):
+        # Fetch one-time access token for Kabus API
         url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
         headers = {
             'Content-Type': 'application/json',
@@ -192,13 +218,16 @@ class kabus(Exchange):
             raise ExchangeError()
 
     def parse_ticker(self, pair):
+        # Parse ticker string to get symbol and exchange code
         identifier = pair.split('/')[0]
         symbol = identifier.split('@')[0]
         exchange = int(identifier.split('@')[1])
         return {'Symbol': symbol, 'Exchange': exchange}
 
     def register_whitelist(self, whitelist):
-        # url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/register'
+        # Register whitelist symbols.
+        # FIXME: This cannnot be use from Worker due to the nature of the bot process.
+        # PriceServer has a function for the same purpose and that is used instead.
         symbols = {'Symbols': []}
         for i in range(0, len(whitelist)):
             tickerVal = self.parse_ticker(whitelist[i])
@@ -208,6 +237,9 @@ class kabus(Exchange):
         return response['RegistList']
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
+        # Attach header and other necessary parameters to the API request.
+        # This is called before a REST API request thrown to the server.
+        # TODO: Handle differently 'public' call and 'private' call to improve security.
         self.check_required_credentials()
         if not self.apiKey:
             self.apiKey = self.fetch_token()

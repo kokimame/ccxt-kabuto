@@ -41,11 +41,13 @@ module.exports = class kabus extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'fetchBalance': true,
                 'fetchOHLCV': true,
                 'fetchOrderBook': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'registerWhitelist': true,
+                'createOrder': true,
             },
             'precision': {
                 'amount': -2,
@@ -55,13 +57,17 @@ module.exports = class kabus extends Exchange {
                 'public': {
                     'get': [
                         'board/{symbol}',
-                        '',
                     ],
                     'post': [
                         'token',
                     ],
                     'put': [
                         'register',
+                    ],
+                },
+                'private': {
+                    'get': [
+                        'wallet/cash',
                     ],
                 },
             },
@@ -87,7 +93,7 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
-        // Returns a list of stock code and its basic properties for trading
+        // Return a list of stock code and its basic properties for trading
         // No API access for now
         const markets = [
             '8306@1',
@@ -135,12 +141,32 @@ module.exports = class kabus extends Exchange {
         return result;
     }
 
+    parseBalance (response) {
+        // Parse and organize balance information.
+        const result = { 'info': response };
+        const account = this.account ();
+        account['free'] = this.safeFloat (response, 'StockAccountWallet');
+        result['JPY'] = account;
+        return result;
+    }
+
+    async fetchBalance (params = {}) {
+        // Fetch account balance information
+        await this.loadMarkets ();
+        const response = await this.privateGetWalletCash (params);
+        // {
+        //      'StockAccountWallet': '497120.0'
+        // }
+        return this.parseBalance (response);
+    }
+
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
         await this.loadMarkets ();
         return [];
     }
 
     async fetchTicker (symbol, params = {}) {
+        // Fetch board informatio of a single symbol.
         await this.loadMarkets ();
         symbol = symbol.slice (0, -4);
         const request = {
@@ -155,6 +181,7 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        // Fetch order book information of a single symbol
         const ticker = await this.fetchTicker (symbol, params);
         const keys = Object.keys (ticker);
         const buys = [];
@@ -173,6 +200,7 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        // Fetch latest OHLCV data of a single symbol from the local PriceServer
         symbol = symbol.slice (0, -4);
         const response = await this.fetch ('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET');
         const ohlcvs = JSON.parse (response[symbol]);
@@ -184,6 +212,7 @@ module.exports = class kabus extends Exchange {
     }
 
     fetchToken () {
+        // Fetch one-time access token for Kabus API
         const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/token';
         const headers = {
             'Content-Type': 'application/json',
@@ -200,6 +229,7 @@ module.exports = class kabus extends Exchange {
     }
 
     parseTicker (pair) {
+        // Parse ticker string to get symbol and exchange code
         const identifier = pair.split ('/')[0];
         const symbol = identifier.split ('@')[0];
         const exchange = parseInt (identifier.split ('@')[1]);
@@ -207,7 +237,9 @@ module.exports = class kabus extends Exchange {
     }
 
     async registerWhitelist (whitelist) {
-        // const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + '/register';
+        // Register whitelist symbols.
+        // FIXME: This cannnot be use from Worker due to the nature of the bot process.
+        // PriceServer has a function for the same purpose and that is used instead.
         const symbols = { 'Symbols': [] };
         for (let i = 0; i < whitelist.length; i++) {
             const tickerVal = this.parseTicker (whitelist[i]);
@@ -219,6 +251,9 @@ module.exports = class kabus extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        // Attach header and other necessary parameters to the API request.
+        // This is called before a REST API request thrown to the server.
+        // TODO: Handle differently 'public' call and 'private' call to improve security.
         this.checkRequiredCredentials ();
         if (!this.apiKey) {
             this.apiKey = this.fetchToken ();
