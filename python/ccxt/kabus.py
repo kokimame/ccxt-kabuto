@@ -47,6 +47,7 @@ class kabus(Exchange):
                 'swap': None,
                 'future': None,
                 'option': None,
+                'createOrder': True,
                 'fetchBalance': True,
                 'fetchOHLCV': True,
                 'fetchOrderBook': True,
@@ -67,12 +68,15 @@ class kabus(Exchange):
                         'token',
                     ],
                     'put': [
-                        'register',
+                        'register',  # FIXME: Not used. Directly calling fetch2
                     ],
                 },
                 'private': {
                     'get': [
                         'wallet/cash',
+                    ],
+                    'post': [
+                        'sendorder',  # FIXME: Not used. Directly calling fetch2
                     ],
                 },
             },
@@ -95,6 +99,84 @@ class kabus(Exchange):
                 },
             },
         })
+
+    def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
+        # Attach header and other necessary parameters to the API request.
+        # This is called before a REST API request thrown to the server.
+        # TODO: Handle differently 'public' call and 'private' call to improve security.
+        self.check_required_credentials()
+        if not self.apiKey:
+            self.apiKey = self.fetch_token()
+        request = '/' + self.implode_params(path, params)
+        url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + request
+        headers = {
+            'X-API-KEY': self.apiKey,
+            'Content-Type': 'application/json',
+        }
+        return {'url': url, 'method': method, 'body': body, 'headers': headers}
+
+    def prepare_order(self, pair, type, side, amount, price):
+        # 現物株式取引用のパラメタ設定
+        ticker = self.parse_ticker(pair)
+        orderTypeMap = {'market': 10, 'limit': 20}
+        sideMap = {'sell': '1', 'buy': '2'}
+        delivTypeMap = {'sell': 0, 'buy': 2}  # 現物買→預り金
+        fundTypeMap = {'sell': '  ', 'buy': 'AA'}  # 現物買→信用代用
+        if type == 'market':
+            price = 0
+        return {
+            'Symbol': ticker['Symbol'],
+            'Exchange': ticker['Exchange'],
+            'Side': sideMap[side],
+            'DelivType': delivTypeMap[side],
+            'FundType': fundTypeMap[side],
+            'Qty': amount,
+            'FrontOrderType': orderTypeMap[type],
+            'Price': price,
+        }
+
+    def create_order(self, pair, type, side, amount, price=None, params={}):
+        # https://kabucom.github.io/kabusapi/reference/index.html#operation/sendorderPost
+        self.load_markets()
+        orderParam = self.prepare_order(pair, type, side, amount, price)
+        body = {
+            'Password': self.kabusapi_password,             # 注文パスワード: <string>
+            'Symbol': orderParam['Symbol'],                 # 銘柄コード: <string>
+            'Exchange': orderParam['Exchange'],             # 市場コード: <int> 1(東証), 3(名証), 5(福証), 6(札証)
+            'SecurityType': 1,                              # 商品種別: <int> 1(株式)
+            'Side': orderParam['Side'],                     # 売買区分: <string> 1(売), 2(買)
+            'CashMargin': 1,                                # 信用区分: <int> 1(現物), 2(新規), 3(返済)
+            'DelivType': orderParam['DelivType'],           # 受渡区分: <int> 0(指定なし), 1(自動振替), 2(預かり金) *現物買は必須/現物売は0
+            'FundType': orderParam['FundType'],             # 資産区分: <string> '  '(現物売), 02(保護), AA(信用代用), 11(信用取引) *現物買は必須/現物売はスペース2つ
+            'AccountType': 2,                               # 口座種別: <int> 2(一般), 4(特定), 12(法人)
+            'Qty': orderParam['Qty'],                       # 注文数量: <int>
+            'FrontOrderType': orderParam['FrontOrderType'],  # 執行順序: <int> 10(成行), 20(指値) *他多数
+            'Price': orderParam['Price'],                   # 注文価格: <int>
+            'ExpireDay': 0,                                 # 注文有効期限: <int> *0=本日中
+        }
+        body_str = json.dumps(body)
+        response = self.fetch2('sendorder', 'private', 'POST', params, None, body_str, {}, {})
+        # {'OrderId': '20220423A01N86096051', 'Result': 0}
+        id = self.safe_string(response, 'OrderId')
+        return {
+            'info': response,
+            'id': id,
+        }
+
+    def fetch_token(self):
+        # Fetch one-time access token for Kabus API
+        url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
+        headers = {
+            'Content-Type': 'application/json',
+        }
+        # json.loads() is needed to load json module in transpiled Python script
+        body = json.dumps({'APIPassword': self.password})
+        response = self.fetch(url, 'POST', headers, body)
+        if response['ResultCode'] == '0':
+            return response['Token']
+        else:
+            # Temporary placeholder for exception when it fails to get a new token
+            raise ExchangeError()
 
     def fetch_markets(self, params={}):
         # Return a list of stock code and its basic properties for trading
@@ -164,6 +246,13 @@ class kabus(Exchange):
         self.load_markets()
         return []
 
+    def parse_ticker(self, pair):
+        # Parse ticker string to get symbol and exchange code
+        identifier = pair.split('/')[0]
+        symbol = identifier.split('@')[0]
+        exchange = int(identifier.split('@')[1])
+        return {'Symbol': symbol, 'Exchange': exchange}
+
     def fetch_ticker(self, symbol, params={}):
         # Fetch board informatio of a single symbol.
         self.load_markets()
@@ -202,28 +291,6 @@ class kabus(Exchange):
             data.append(ohlcvs[i][0:-1])
         return data
 
-    def fetch_token(self):
-        # Fetch one-time access token for Kabus API
-        url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + '/token'
-        headers = {
-            'Content-Type': 'application/json',
-        }
-        # json.loads() is needed to load json module in transpiled Python script
-        body = json.dumps({'APIPassword': self.password})
-        response = self.fetch(url, 'POST', headers, body)
-        if response['ResultCode'] == '0':
-            return response['Token']
-        else:
-            # Temporary placeholder for exception when it fails to get a new token
-            raise ExchangeError()
-
-    def parse_ticker(self, pair):
-        # Parse ticker string to get symbol and exchange code
-        identifier = pair.split('/')[0]
-        symbol = identifier.split('@')[0]
-        exchange = int(identifier.split('@')[1])
-        return {'Symbol': symbol, 'Exchange': exchange}
-
     def register_whitelist(self, whitelist):
         # Register whitelist symbols.
         # FIXME: This cannnot be use from Worker due to the nature of the bot process.
@@ -235,18 +302,3 @@ class kabus(Exchange):
         body = json.dumps(symbols)
         response = self.fetch2('register', 'public', 'PUT', {}, None, body, {}, {})
         return response['RegistList']
-
-    def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
-        # Attach header and other necessary parameters to the API request.
-        # This is called before a REST API request thrown to the server.
-        # TODO: Handle differently 'public' call and 'private' call to improve security.
-        self.check_required_credentials()
-        if not self.apiKey:
-            self.apiKey = self.fetch_token()
-        request = '/' + self.implode_params(path, params)
-        url = self.implode_params(self.urls['api'], {'ipaddr': self.ipaddr}) + request
-        headers = {
-            'X-API-KEY': self.apiKey,
-            'Content-Type': 'application/json',
-        }
-        return {'url': url, 'method': method, 'body': body, 'headers': headers}

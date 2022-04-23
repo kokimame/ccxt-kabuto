@@ -47,6 +47,7 @@ class kabus extends Exchange {
                 'swap' => null,
                 'future' => null,
                 'option' => null,
+                'createOrder' => true,
                 'fetchBalance' => true,
                 'fetchOHLCV' => true,
                 'fetchOrderBook' => true,
@@ -67,12 +68,15 @@ class kabus extends Exchange {
                         'token',
                     ),
                     'put' => array(
-                        'register',
+                        'register', // FIXME => Not used. Directly calling fetch2
                     ),
                 ),
                 'private' => array(
                     'get' => array(
                         'wallet/cash',
+                    ),
+                    'post' => array(
+                        'sendorder', // FIXME => Not used. Directly calling fetch2
                     ),
                 ),
             ),
@@ -95,6 +99,91 @@ class kabus extends Exchange {
                 ),
             ),
         ));
+    }
+
+    public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
+        // Attach header and other necessary parameters to the API $request->
+        // This is called before a REST API $request thrown to the server.
+        // TODO => Handle differently 'public' call and 'private' call to improve security.
+        $this->check_required_credentials();
+        if (!$this->apiKey) {
+            $this->apiKey = $this->fetch_token();
+        }
+        $request = '/' . $this->implode_params($path, $params);
+        $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . $request;
+        $headers = array(
+            'X-API-KEY' => $this->apiKey,
+            'Content-Type' => 'application/json',
+        );
+        return array( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
+    }
+
+    public function prepare_order($pair, $type, $side, $amount, $price) {
+        // 現物株式取引用のパラメタ設定
+        $ticker = $this->parse_ticker($pair);
+        $orderTypeMap = array( 'market' => 10, 'limit' => 20 );
+        $sideMap = array( 'sell' => '1', 'buy' => '2' );
+        $delivTypeMap = array( 'sell' => 0, 'buy' => 2 ); // 現物買→預り金
+        $fundTypeMap = array( 'sell' => '  ', 'buy' => 'AA' ); // 現物買→信用代用
+        if ($type === 'market') {
+            $price = 0;
+        }
+        return array(
+            'Symbol' => $ticker['Symbol'],
+            'Exchange' => $ticker['Exchange'],
+            'Side' => $sideMap[$side],
+            'DelivType' => $delivTypeMap[$side],
+            'FundType' => $fundTypeMap[$side],
+            'Qty' => $amount,
+            'FrontOrderType' => $orderTypeMap[$type],
+            'Price' => $price,
+        );
+    }
+
+    public function create_order($pair, $type, $side, $amount, $price = null, $params = array ()) {
+        // https://kabucom.github.io/kabusapi/reference/index.html#operation/sendorderPost
+        yield $this->load_markets();
+        $orderParam = $this->prepare_order($pair, $type, $side, $amount, $price);
+        $body = array(
+            'Password' => $this->kabusapi_password,             // 注文パスワード => <string>
+            'Symbol' => $orderParam['Symbol'],                 // 銘柄コード => <string>
+            'Exchange' => $orderParam['Exchange'],             // 市場コード => <int> 1 (東証), 3 (名証), 5 (福証), 6 (札証)
+            'SecurityType' => 1,                              // 商品種別 => <int> 1 (株式)
+            'Side' => $orderParam['Side'],                     // 売買区分 => <string> 1 (売), 2 (買)
+            'CashMargin' => 1,                                // 信用区分 => <int> 1 (現物), 2 (新規), 3 (返済)
+            'DelivType' => $orderParam['DelivType'],           // 受渡区分 => <int> 0 (指定なし), 1 (自動振替), 2 (預かり金) *現物買は必須/現物売は0
+            'FundType' => $orderParam['FundType'],             // 資産区分 => <string> '  ' (現物売), 02 (保護), AA (信用代用), 11 (信用取引) *現物買は必須/現物売はスペース2つ
+            'AccountType' => 2,                               // 口座種別 => <int> 2 (一般), 4 (特定), 12 (法人)
+            'Qty' => $orderParam['Qty'],                       // 注文数量 => <int>
+            'FrontOrderType' => $orderParam['FrontOrderType'], // 執行順序 => <int> 10 (成行), 20 (指値) *他多数
+            'Price' => $orderParam['Price'],                   // 注文価格 => <int>
+            'ExpireDay' => 0,                                 // 注文有効期限 => <int> *0=本日中
+        );
+        $body_str = json_encode ($body);
+        $response = yield $this->fetch2('sendorder', 'private', 'POST', $params, null, $body_str, array(), array());
+        // array('OrderId' => '20220423A01N86096051', 'Result' => 0)
+        $id = $this->safe_string($response, 'OrderId');
+        return array(
+            'info' => $response,
+            'id' => $id,
+        );
+    }
+
+    public function fetch_token() {
+        // Fetch one-time access token for Kabus API
+        $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . '/token';
+        $headers = array(
+            'Content-Type' => 'application/json',
+        );
+        // JSON.parse() is needed to load json module in transpiled Python script
+        $body = json_encode (array( 'APIPassword' => $this->password ));
+        $response = $this->fetch($url, 'POST', $headers, $body);
+        if ($response['ResultCode'] === '0') {
+            return $response['Token'];
+        } else {
+            // Temporary placeholder for exception when it fails to get a new token
+            throw new ExchangeError();
+        }
     }
 
     public function fetch_markets($params = array ()) {
@@ -170,6 +259,14 @@ class kabus extends Exchange {
         return array();
     }
 
+    public function parse_ticker($pair) {
+        // Parse ticker string to get $symbol and $exchange code
+        $identifier = explode('/', $pair)[0];
+        $symbol = explode('@', $identifier)[0];
+        $exchange = intval(explode('@', $identifier)[1]);
+        return array( 'Symbol' => $symbol, 'Exchange' => $exchange );
+    }
+
     public function fetch_ticker($symbol, $params = array ()) {
         // Fetch board informatio of a single $symbol->
         yield $this->load_markets();
@@ -216,31 +313,6 @@ class kabus extends Exchange {
         return $data;
     }
 
-    public function fetch_token() {
-        // Fetch one-time access token for Kabus API
-        $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . '/token';
-        $headers = array(
-            'Content-Type' => 'application/json',
-        );
-        // JSON.parse() is needed to load json module in transpiled Python script
-        $body = json_encode (array( 'APIPassword' => $this->password ));
-        $response = $this->fetch($url, 'POST', $headers, $body);
-        if ($response['ResultCode'] === '0') {
-            return $response['Token'];
-        } else {
-            // Temporary placeholder for exception when it fails to get a new token
-            throw new ExchangeError();
-        }
-    }
-
-    public function parse_ticker($pair) {
-        // Parse ticker string to get $symbol and $exchange code
-        $identifier = explode('/', $pair)[0];
-        $symbol = explode('@', $identifier)[0];
-        $exchange = intval(explode('@', $identifier)[1]);
-        return array( 'Symbol' => $symbol, 'Exchange' => $exchange );
-    }
-
     public function register_whitelist($whitelist) {
         // Register $whitelist $symbols->
         // FIXME => This cannnot be use from Worker due to the nature of the bot process.
@@ -253,22 +325,5 @@ class kabus extends Exchange {
         $body = json_encode ($symbols);
         $response = $this->fetch2('register', 'public', 'PUT', array(), null, $body, array(), array());
         return $response['RegistList'];
-    }
-
-    public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
-        // Attach header and other necessary parameters to the API $request->
-        // This is called before a REST API $request thrown to the server.
-        // TODO => Handle differently 'public' call and 'private' call to improve security.
-        $this->check_required_credentials();
-        if (!$this->apiKey) {
-            $this->apiKey = $this->fetch_token();
-        }
-        $request = '/' . $this->implode_params($path, $params);
-        $url = $this->implode_params($this->urls['api'], array( 'ipaddr' => $this->ipaddr )) . $request;
-        $headers = array(
-            'X-API-KEY' => $this->apiKey,
-            'Content-Type' => 'application/json',
-        );
-        return array( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 }

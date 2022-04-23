@@ -62,12 +62,15 @@ module.exports = class kabus extends Exchange {
                         'token',
                     ],
                     'put': [
-                        'register',
+                        'register', // FIXME: Not used. Directly calling fetch2
                     ],
                 },
                 'private': {
                     'get': [
                         'wallet/cash',
+                    ],
+                    'post': [
+                        'sendorder', // FIXME: Not used. Directly calling fetch2
                     ],
                 },
             },
@@ -107,6 +110,57 @@ module.exports = class kabus extends Exchange {
             'Content-Type': 'application/json',
         };
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    }
+
+    prepareOrder (pair, type, side, amount, price) {
+        // 現物株式取引用のパラメタ設定
+        const ticker = this.parseTicker (pair);
+        const orderTypeMap = { 'market': 10, 'limit': 20 };
+        const sideMap = { 'sell': '1', 'buy': '2' };
+        const delivTypeMap = { 'sell': 0, 'buy': 2 }; // 現物買→預り金
+        const fundTypeMap = { 'sell': '  ', 'buy': 'AA' }; // 現物買→信用代用
+        if (type === 'market') {
+            price = 0;
+        }
+        return {
+            'Symbol': ticker['Symbol'],
+            'Exchange': ticker['Exchange'],
+            'Side': sideMap[side],
+            'DelivType': delivTypeMap[side],
+            'FundType': fundTypeMap[side],
+            'Qty': amount,
+            'FrontOrderType': orderTypeMap[type],
+            'Price': price,
+        };
+    }
+
+    async createOrder (pair, type, side, amount, price = undefined, params = {}) {
+        // https://kabucom.github.io/kabusapi/reference/index.html#operation/sendorderPost
+        await this.loadMarkets ();
+        const orderParam = this.prepareOrder (pair, type, side, amount, price);
+        const body = {
+            'Password': this.kabusapi_password,             // 注文パスワード: <string>
+            'Symbol': orderParam['Symbol'],                 // 銘柄コード: <string>
+            'Exchange': orderParam['Exchange'],             // 市場コード: <int> 1 (東証), 3 (名証), 5 (福証), 6 (札証)
+            'SecurityType': 1,                              // 商品種別: <int> 1 (株式)
+            'Side': orderParam['Side'],                     // 売買区分: <string> 1 (売), 2 (買)
+            'CashMargin': 1,                                // 信用区分: <int> 1 (現物), 2 (新規), 3 (返済)
+            'DelivType': orderParam['DelivType'],           // 受渡区分: <int> 0 (指定なし), 1 (自動振替), 2 (預かり金) *現物買は必須/現物売は0
+            'FundType': orderParam['FundType'],             // 資産区分: <string> '  ' (現物売), 02 (保護), AA (信用代用), 11 (信用取引) *現物買は必須/現物売はスペース2つ
+            'AccountType': 2,                               // 口座種別: <int> 2 (一般), 4 (特定), 12 (法人)
+            'Qty': orderParam['Qty'],                       // 注文数量: <int>
+            'FrontOrderType': orderParam['FrontOrderType'], // 執行順序: <int> 10 (成行), 20 (指値) *他多数
+            'Price': orderParam['Price'],                   // 注文価格: <int>
+            'ExpireDay': 0,                                 // 注文有効期限: <int> *0=本日中
+        };
+        const body_str = JSON.stringify (body);
+        const response = await this.fetch2 ('sendorder', 'private', 'POST', params, undefined, body_str, {}, {});
+        // {'OrderId': '20220423A01N86096051', 'Result': 0}
+        const id = this.safeString (response, 'OrderId');
+        return {
+            'info': response,
+            'id': id,
+        };
     }
 
     fetchToken () {
