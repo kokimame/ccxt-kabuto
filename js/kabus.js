@@ -44,7 +44,9 @@ module.exports = class kabus extends Exchange {
                 'createOrder': true,
                 'fetchBalance': true,
                 'fetchOHLCV': true,
+                'fetchOrder': true,
                 'fetchOrderBook': true,
+                'fetchOrders': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'registerWhitelist': true,
@@ -58,6 +60,7 @@ module.exports = class kabus extends Exchange {
                     'get': [
                         'board/{symbol}',
                         'wallet/cash',
+                        'orders',
                     ],
                     'post': [
                         'token',
@@ -109,21 +112,17 @@ module.exports = class kabus extends Exchange {
     prepareOrder (pair, type, side, amount, price) {
         // 現物株式取引用のパラメタ設定
         const ticker = this.parseTicker (pair);
-        const orderTypeMap = { 'market': 10, 'limit': 20 };
-        const sideMap = { 'sell': '1', 'buy': '2' };
-        const delivTypeMap = { 'sell': 0, 'buy': 2 }; // 現物買→預り金
-        const fundTypeMap = { 'sell': '  ', 'buy': 'AA' }; // 現物買→信用代用
         if (type === 'market') {
-            price = 0;
+            price = 0; // 成行執行→price=0
         }
         return {
             'Symbol': ticker['Symbol'],
             'Exchange': ticker['Exchange'],
-            'Side': sideMap[side],
-            'DelivType': delivTypeMap[side],
-            'FundType': fundTypeMap[side],
+            'Side': this.safeString ({ 'sell': '1', 'buy': '2' }, side),
+            'DelivType': this.safeInteger ({ 'sell': 0, 'buy': 2 }, side), // 現物買→預り金
+            'FundType': this.safeString ({ 'sell': '  ', 'buy': 'AA' }, side), // 現物買→信用代用
             'Qty': amount,
-            'FrontOrderType': orderTypeMap[type],
+            'FrontOrderType': this.safeInteger ({ 'market': 10, 'limit': 20 }, type),
             'Price': price,
         };
     }
@@ -221,6 +220,116 @@ module.exports = class kabus extends Exchange {
             });
         }
         return result;
+    }
+
+    parseOrder (order, market = undefined) {
+        //     {'AccountType': 2,
+        //       'CumQty': 0.0,
+        //       'DelivType': 2,
+        //       'Details': [{'Commission': 0.0,
+        //                    'CommissionTax': 0.0,
+        //                    'DelivDay': 20220427,
+        //                    'ExchangeID': None,
+        //                    'ExecutionDay': None,
+        //                    'ExecutionID': None,
+        //                    'ID': '20220423A01N86096041',
+        //                    'OrdType': 1,
+        //                    'Price': 0.0,
+        //                    'Qty': 100.0,
+        //                    'RecType': 1,
+        //                    'SeqNum': 1,
+        //                    'State': 3,
+        //                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'},
+        //                   {'Commission': 0.0,
+        //                    'CommissionTax': 0.0,
+        //                    'DelivDay': 20220427,
+        //                    'ExchangeID': None,
+        //                    'ExecutionDay': None,
+        //                    'ExecutionID': None,
+        //                    'ID': '20220423B01N86096042',
+        //                    'OrdType': 1,
+        //                    'Price': 0.0,
+        //                    'Qty': 100.0,
+        //                    'RecType': 4,
+        //                    'SeqNum': 2,
+        //                    'State': 1,
+        //                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'}],
+        //       'Exchange': 1,
+        //       'ExchangeName': '東証ス',
+        //       'ExpireDay': 20220425,
+        //       'ID': '20220423A01N86096041',
+        //       'OrdType': 1,
+        //       'OrderQty': 100.0,
+        //       'OrderState': 1,
+        //       'Price': 0.0,
+        //       'RecvTime': '2022-04-23T14:31:16.652838+09:00',
+        //       'Side': '2',
+        //       'State': 1,
+        //       'Symbol': '9318',
+        //       'SymbolName': 'アジア開発キャピタル'},
+        //     }
+        const id = this.safeString (order, 'ID');
+        const price = this.safeFloat (order, 'Price');
+        const amount = this.safeFloat (order, 'OrderQty');
+        const cumQty = this.safeFloat (order, 'CumQty');
+        const side = this.safeStringLower ({ '1': 'sell', '2': 'buy' }, order['Side']);
+        const timestamp = this.parse8601 (this.safeString (order, 'RecvTime'));
+        const symbol = this.safeString (order, 'Symbol');
+        const exchange = this.safeString (order, 'Exchange');
+        let order_type = 'limit';
+        if (price === 0) {
+            order_type = 'market';
+        }
+        // Order status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
+        const n_details = order['Details'].length;
+        if (n_details < 1) {
+            throw new ExchangeError (this.id + ' expects to have at least 1 detail per order but 0 given');
+        }
+        const lastDetail = order['Details'][n_details - 1];
+        // Get the latest state from the Details
+        const status = this.safeString ({ '3': 'open', '5': 'closed' }, lastDetail['State']);
+        return this.safeOrder ({
+            'id': id,
+            'clientOrderId': undefined,
+            'info': order,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'lastTradeTimestamp': undefined,
+            'status': status,
+            'symbol': symbol + '@' + exchange + '/JPY',
+            'type': order_type,
+            'timeInForce': undefined,
+            'postOnly': undefined,
+            'side': side,
+            'price': price,
+            'stopPrice': undefined,
+            'cost': undefined,
+            'amount': amount,
+            'filled': cumQty,
+            'remaining': amount - cumQty,
+            'fee': undefined,
+            'average': undefined,
+            'trades': undefined,
+        }, market);
+    }
+
+    async fetchOrders (symbol = undefined, since = undefined, limit = 100, params = {}) {
+        await this.loadMarkets ();
+        params['product'] = 0;
+        const response = await this.privateGetOrders (params);
+        return this.parseOrders (response);
+    }
+
+    async fetchOrder (id, symbol = undefined, params = {}) {
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOrder() requires a `symbol` argument');
+        }
+        const orders = await this.fetchOrders (symbol);
+        const ordersById = this.indexBy (orders, 'id');
+        if (id in ordersById) {
+            return ordersById[id];
+        }
+        throw new OrderNotFound (this.id + 'No order found with id ' + id);
     }
 
     parseBalance (response) {

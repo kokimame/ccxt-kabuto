@@ -7,6 +7,8 @@ namespace ccxt;
 
 use Exception; // a common import
 use \ccxt\ExchangeError;
+use \ccxt\ArgumentsRequired;
+use \ccxt\OrderNotFound;
 
 class kabus extends Exchange {
 
@@ -50,7 +52,9 @@ class kabus extends Exchange {
                 'createOrder' => true,
                 'fetchBalance' => true,
                 'fetchOHLCV' => true,
+                'fetchOrder' => true,
                 'fetchOrderBook' => true,
+                'fetchOrders' => true,
                 'fetchTicker' => true,
                 'fetchTickers' => true,
                 'registerWhitelist' => true,
@@ -60,23 +64,18 @@ class kabus extends Exchange {
                 'price' => null,
             ),
             'api' => array(
-                'public' => array(
+                'private' => array(
                     'get' => array(
                         'board/{symbol}',
+                        'wallet/cash',
+                        'orders',
                     ),
                     'post' => array(
                         'token',
+                        'sendorder', // FIXME => Not used. Directly calling fetch2
                     ),
                     'put' => array(
                         'register', // FIXME => Not used. Directly calling fetch2
-                    ),
-                ),
-                'private' => array(
-                    'get' => array(
-                        'wallet/cash',
-                    ),
-                    'post' => array(
-                        'sendorder', // FIXME => Not used. Directly calling fetch2
                     ),
                 ),
             ),
@@ -101,7 +100,7 @@ class kabus extends Exchange {
         ));
     }
 
-    public function sign($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {
+    public function sign($path, $api = 'private', $method = 'GET', $params = array (), $headers = null, $body = null) {
         // Attach header and other necessary parameters to the API $request->
         // This is called before a REST API $request thrown to the server.
         // TODO => Handle differently 'public' call and 'private' call to improve security.
@@ -121,21 +120,17 @@ class kabus extends Exchange {
     public function prepare_order($pair, $type, $side, $amount, $price) {
         // 現物株式取引用のパラメタ設定
         $ticker = $this->parse_ticker($pair);
-        $orderTypeMap = array( 'market' => 10, 'limit' => 20 );
-        $sideMap = array( 'sell' => '1', 'buy' => '2' );
-        $delivTypeMap = array( 'sell' => 0, 'buy' => 2 ); // 現物買→預り金
-        $fundTypeMap = array( 'sell' => '  ', 'buy' => 'AA' ); // 現物買→信用代用
         if ($type === 'market') {
-            $price = 0;
+            $price = 0; // 成行執行→$price=0
         }
         return array(
             'Symbol' => $ticker['Symbol'],
             'Exchange' => $ticker['Exchange'],
-            'Side' => $sideMap[$side],
-            'DelivType' => $delivTypeMap[$side],
-            'FundType' => $fundTypeMap[$side],
+            'Side' => $this->safe_string(array( 'sell' => '1', 'buy' => '2' ), $side),
+            'DelivType' => $this->safe_integer(array( 'sell' => 0, 'buy' => 2 ), $side), // 現物買→預り金
+            'FundType' => $this->safe_string(array( 'sell' => '  ', 'buy' => 'AA' ), $side), // 現物買→信用代用
             'Qty' => $amount,
-            'FrontOrderType' => $orderTypeMap[$type],
+            'FrontOrderType' => $this->safe_integer(array( 'market' => 10, 'limit' => 20 ), $type),
             'Price' => $price,
         );
     }
@@ -235,6 +230,116 @@ class kabus extends Exchange {
         return $result;
     }
 
+    public function parse_order($order, $market = null) {
+        //     array('AccountType' => 2,
+        //       'CumQty' => 0.0,
+        //       'DelivType' => 2,
+        //       'Details' => [array('Commission' => 0.0,
+        //                    'CommissionTax' => 0.0,
+        //                    'DelivDay' => 20220427,
+        //                    'ExchangeID' => None,
+        //                    'ExecutionDay' => None,
+        //                    'ExecutionID' => None,
+        //                    'ID' => '20220423A01N86096041',
+        //                    'OrdType' => 1,
+        //                    'Price' => 0.0,
+        //                    'Qty' => 100.0,
+        //                    'RecType' => 1,
+        //                    'SeqNum' => 1,
+        //                    'State' => 3,
+        //                    'TransactTime' => '2022-04-23T14:31:16.652838+09:00'),
+        //                   array('Commission' => 0.0,
+        //                    'CommissionTax' => 0.0,
+        //                    'DelivDay' => 20220427,
+        //                    'ExchangeID' => None,
+        //                    'ExecutionDay' => None,
+        //                    'ExecutionID' => None,
+        //                    'ID' => '20220423B01N86096042',
+        //                    'OrdType' => 1,
+        //                    'Price' => 0.0,
+        //                    'Qty' => 100.0,
+        //                    'RecType' => 4,
+        //                    'SeqNum' => 2,
+        //                    'State' => 1,
+        //                    'TransactTime' => '2022-04-23T14:31:16.652838+09:00')],
+        //       'Exchange' => 1,
+        //       'ExchangeName' => '東証ス',
+        //       'ExpireDay' => 20220425,
+        //       'ID' => '20220423A01N86096041',
+        //       'OrdType' => 1,
+        //       'OrderQty' => 100.0,
+        //       'OrderState' => 1,
+        //       'Price' => 0.0,
+        //       'RecvTime' => '2022-04-23T14:31:16.652838+09:00',
+        //       'Side' => '2',
+        //       'State' => 1,
+        //       'Symbol' => '9318',
+        //       'SymbolName' => 'アジア開発キャピタル'),
+        //     }
+        $id = $this->safe_string($order, 'ID');
+        $price = $this->safe_float($order, 'Price');
+        $amount = $this->safe_float($order, 'OrderQty');
+        $cumQty = $this->safe_float($order, 'CumQty');
+        $side = $this->safe_string_lower(array( '1' => 'sell', '2' => 'buy' ), $order['Side']);
+        $timestamp = $this->parse8601($this->safe_string($order, 'RecvTime'));
+        $symbol = $this->safe_string($order, 'Symbol');
+        $exchange = $this->safe_string($order, 'Exchange');
+        $order_type = 'limit';
+        if ($price === 0) {
+            $order_type = 'market';
+        }
+        // Order $status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
+        $n_details = is_array($order['Details']) ? count($order['Details']) : 0;
+        if ($n_details < 1) {
+            throw new ExchangeError($this->id . ' expects to have at least 1 detail per $order but 0 given');
+        }
+        $lastDetail = $order['Details'][$n_details - 1];
+        // Get the latest state from the Details
+        $status = $this->safe_string(array( '3' => 'open', '5' => 'closed' ), $lastDetail['State']);
+        return $this->safe_order(array(
+            'id' => $id,
+            'clientOrderId' => null,
+            'info' => $order,
+            'timestamp' => $timestamp,
+            'datetime' => $this->iso8601($timestamp),
+            'lastTradeTimestamp' => null,
+            'status' => $status,
+            'symbol' => $symbol . '@' . $exchange . '/JPY',
+            'type' => $order_type,
+            'timeInForce' => null,
+            'postOnly' => null,
+            'side' => $side,
+            'price' => $price,
+            'stopPrice' => null,
+            'cost' => null,
+            'amount' => $amount,
+            'filled' => $cumQty,
+            'remaining' => $amount - $cumQty,
+            'fee' => null,
+            'average' => null,
+            'trades' => null,
+        ), $market);
+    }
+
+    public function fetch_orders($symbol = null, $since = null, $limit = 100, $params = array ()) {
+        $this->load_markets();
+        $params['product'] = 0;
+        $response = $this->privateGetOrders ($params);
+        return $this->parse_orders($response);
+    }
+
+    public function fetch_order($id, $symbol = null, $params = array ()) {
+        if ($symbol === null) {
+            throw new ArgumentsRequired($this->id . ' fetchOrder() requires a `$symbol` argument');
+        }
+        $orders = $this->fetch_orders($symbol);
+        $ordersById = $this->index_by($orders, 'id');
+        if (is_array($ordersById) && array_key_exists($id, $ordersById)) {
+            return $ordersById[$id];
+        }
+        throw new OrderNotFound($this->id . 'No order found with $id ' . $id);
+    }
+
     public function parse_balance($response) {
         // Parse and organize balance information.
         $result = array( 'info' => $response );
@@ -274,7 +379,7 @@ class kabus extends Exchange {
         $request = array(
             'symbol' => $symbol,
         );
-        return $this->publicGetBoardSymbol (array_merge($request, $params));
+        return $this->privateGetBoardSymbol (array_merge($request, $params));
     }
 
     public function fetch_tickers($symbol, $params = array ()) {
@@ -323,7 +428,7 @@ class kabus extends Exchange {
             $symbols['Symbols'][] = $tickerVal;
         }
         $body = json_encode ($symbols);
-        $response = $this->fetch2('register', 'public', 'PUT', array(), null, $body, array(), array());
+        $response = $this->fetch2('register', 'private', 'PUT', array(), null, $body, array(), array());
         return $response['RegistList'];
     }
 }
