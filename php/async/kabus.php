@@ -49,6 +49,7 @@ class kabus extends Exchange {
                 'swap' => null,
                 'future' => null,
                 'option' => null,
+                'cancelOrder' => true,
                 'createOrder' => true,
                 'fetchBalance' => true,
                 'fetchOHLCV' => true,
@@ -76,6 +77,7 @@ class kabus extends Exchange {
                     ),
                     'put' => array(
                         'register', // FIXME => Not used. Directly calling fetch2
+                        'cancelorder',
                     ),
                 ),
             ),
@@ -295,7 +297,7 @@ class kabus extends Exchange {
         }
         $lastDetail = $order['Details'][$n_details - 1];
         // Get the latest state from the Details
-        $status = $this->safe_string(array( '3' => 'open', '5' => 'closed' ), $lastDetail['State']);
+        $status = $this->safe_string(array( '1' => 'open', '3' => 'closed' ), $lastDetail['State']);
         return $this->safe_order(array(
             'id' => $id,
             'clientOrderId' => null,
@@ -338,6 +340,16 @@ class kabus extends Exchange {
             return $ordersById[$id];
         }
         throw new OrderNotFound($this->id . 'No order found with $id ' . $id);
+    }
+
+    public function cancel_order($id, $symbol = null, $params = array ()) {
+        yield $this->load_markets();
+        $body = array(
+            'OrderID' => $id,
+            'Password' => $this->kabusapi_password,
+        );
+        $body_str = json_encode ($body);
+        return yield $this->fetch2('cancelorder', 'private', 'PUT', $params, null, $body_str, array(), array());
     }
 
     public function parse_balance($response) {

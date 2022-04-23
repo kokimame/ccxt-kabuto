@@ -49,6 +49,7 @@ class kabus(Exchange):
                 'swap': None,
                 'future': None,
                 'option': None,
+                'cancelOrder': True,
                 'createOrder': True,
                 'fetchBalance': True,
                 'fetchOHLCV': True,
@@ -76,6 +77,7 @@ class kabus(Exchange):
                     ],
                     'put': [
                         'register',  # FIXME: Not used. Directly calling fetch2
+                        'cancelorder',
                     ],
                 },
             },
@@ -283,7 +285,7 @@ class kabus(Exchange):
             raise ExchangeError(self.id + ' expects to have at least 1 detail per order but 0 given')
         lastDetail = order['Details'][n_details - 1]
         # Get the latest state from the Details
-        status = self.safe_string({'3': 'open', '5': 'closed'}, lastDetail['State'])
+        status = self.safe_string({'1': 'open', '3': 'closed'}, lastDetail['State'])
         return self.safe_order({
             'id': id,
             'clientOrderId': None,
@@ -322,6 +324,15 @@ class kabus(Exchange):
         if id in ordersById:
             return ordersById[id]
         raise OrderNotFound(self.id + 'No order found with id ' + id)
+
+    async def cancel_order(self, id, symbol=None, params={}):
+        await self.load_markets()
+        body = {
+            'OrderID': id,
+            'Password': self.kabusapi_password,
+        }
+        body_str = json.dumps(body)
+        return await self.fetch2('cancelorder', 'private', 'PUT', params, None, body_str, {}, {})
 
     def parse_balance(self, response):
         # Parse and organize balance information.

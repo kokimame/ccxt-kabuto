@@ -41,6 +41,7 @@ module.exports = class kabus extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'cancelOrder': true,
                 'createOrder': true,
                 'fetchBalance': true,
                 'fetchOHLCV': true,
@@ -68,6 +69,7 @@ module.exports = class kabus extends Exchange {
                     ],
                     'put': [
                         'register', // FIXME: Not used. Directly calling fetch2
+                        'cancelorder',
                     ],
                 },
             },
@@ -287,7 +289,7 @@ module.exports = class kabus extends Exchange {
         }
         const lastDetail = order['Details'][n_details - 1];
         // Get the latest state from the Details
-        const status = this.safeString ({ '3': 'open', '5': 'closed' }, lastDetail['State']);
+        const status = this.safeString ({ '1': 'open', '3': 'closed' }, lastDetail['State']);
         return this.safeOrder ({
             'id': id,
             'clientOrderId': undefined,
@@ -330,6 +332,16 @@ module.exports = class kabus extends Exchange {
             return ordersById[id];
         }
         throw new OrderNotFound (this.id + 'No order found with id ' + id);
+    }
+
+    async cancelOrder (id, symbol = undefined, params = {}) {
+        await this.loadMarkets ();
+        const body = {
+            'OrderID': id,
+            'Password': this.kabusapi_password,
+        };
+        const body_str = JSON.stringify (body);
+        return await this.fetch2 ('cancelorder', 'private', 'PUT', params, undefined, body_str, {}, {});
     }
 
     parseBalance (response) {
