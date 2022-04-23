@@ -1,7 +1,7 @@
 'use strict';
 
 const Exchange = require ('./base/Exchange');
-const { ExchangeError } = require ('./base/errors');
+const { ExchangeError, ArgumentsRequired, OrderNotFound } = require ('./base/errors');
 
 module.exports = class kabus extends Exchange {
     describe () {
@@ -54,23 +54,17 @@ module.exports = class kabus extends Exchange {
                 'price': undefined,
             },
             'api': {
-                'public': {
-                    'get': [
-                        'board/{symbol}',
-                    ],
-                    'post': [
-                        'token',
-                    ],
-                    'put': [
-                        'register', // FIXME: Not used. Directly calling fetch2
-                    ],
-                },
                 'private': {
                     'get': [
+                        'board/{symbol}',
                         'wallet/cash',
                     ],
                     'post': [
+                        'token',
                         'sendorder', // FIXME: Not used. Directly calling fetch2
+                    ],
+                    'put': [
+                        'register', // FIXME: Not used. Directly calling fetch2
                     ],
                 },
             },
@@ -95,7 +89,7 @@ module.exports = class kabus extends Exchange {
         });
     }
 
-    sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+    sign (path, api = 'private', method = 'GET', params = {}, headers = undefined, body = undefined) {
         // Attach header and other necessary parameters to the API request.
         // This is called before a REST API request thrown to the server.
         // TODO: Handle differently 'public' call and 'private' call to improve security.
@@ -268,7 +262,7 @@ module.exports = class kabus extends Exchange {
         const request = {
             'symbol': symbol,
         };
-        return this.publicGetBoardSymbol (this.extend (request, params));
+        return this.privateGetBoardSymbol (this.extend (request, params));
     }
 
     async fetchTickers (symbol, params = {}) {
@@ -317,7 +311,7 @@ module.exports = class kabus extends Exchange {
             symbols['Symbols'].push (tickerVal);
         }
         const body = JSON.stringify (symbols);
-        const response = this.fetch2 ('register', 'public', 'PUT', {}, undefined, body, {}, {});
+        const response = this.fetch2 ('register', 'private', 'PUT', {}, undefined, body, {}, {});
         return response['RegistList'];
     }
 };
