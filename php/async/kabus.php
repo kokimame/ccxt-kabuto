@@ -419,15 +419,18 @@ class kabus extends Exchange {
     }
 
     public function fetch_ticker($symbol, $params = array ()) {
-        // Fetch board informatio of a single $symbol->
+        // Fetch board information of a single $symbol->
         yield $this->load_markets();
         $params['symbol'] = $this->parse_symbol($symbol)['Market'];
         return $this->privateGetBoardSymbol ($params);
     }
 
-    public function fetch_tickers($symbol, $params = array ()) {
-        // Coming soon
-        return null;
+    public function fetch_tickers($symbols, $params = array ()) {
+        $result = array();
+        for ($i = 0; $i < count($symbols); $i++) {
+            $result[] = $this->fetch_ticker($symbols[$i]);
+        }
+        return $result;
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {

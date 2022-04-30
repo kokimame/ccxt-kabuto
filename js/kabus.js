@@ -411,15 +411,18 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchTicker (symbol, params = {}) {
-        // Fetch board informatio of a single symbol.
+        // Fetch board information of a single symbol.
         await this.loadMarkets ();
         params['symbol'] = this.parseSymbol (symbol)['Market'];
         return this.privateGetBoardSymbol (params);
     }
 
-    async fetchTickers (symbol, params = {}) {
-        // Coming soon
-        return null;
+    async fetchTickers (symbols, params = {}) {
+        const result = [];
+        for (let i = 0; i < symbols.length; i++) {
+            result.push (this.fetchTicker (symbols[i]));
+        }
+        return result;
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {

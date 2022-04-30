@@ -395,14 +395,16 @@ class kabus(Exchange):
         return self.parse_balance(response)
 
     def fetch_ticker(self, symbol, params={}):
-        # Fetch board informatio of a single symbol.
+        # Fetch board information of a single symbol.
         self.load_markets()
         params['symbol'] = self.parse_symbol(symbol)['Market']
         return self.privateGetBoardSymbol(params)
 
-    def fetch_tickers(self, symbol, params={}):
-        # Coming soon
-        return None
+    def fetch_tickers(self, symbols, params={}):
+        result = []
+        for i in range(0, len(symbols)):
+            result.append(self.fetch_ticker(symbols[i]))
+        return result
 
     def fetch_order_book(self, symbol, limit=None, params={}):
         # Fetch order book information of a single symbol
