@@ -128,9 +128,10 @@ module.exports = class kabus extends Exchange {
         // {symbol} = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
         // NOTE: code in CCXT/freqtrade corresponds to "Symbol" in Kabus.
         const market = symbol.split ('/')[0];
+        const fiat = symbol.split ('/')[1];
         const stock_code = market.split ('@')[0];
         const exchange = parseInt (market.split ('@')[1]);
-        return { 'Code': stock_code, 'Exchange': exchange, 'Market': market };
+        return { 'Code': stock_code, 'Exchange': exchange, 'Market': market, 'Fiat': fiat };
     }
 
     prepareOrder (symbol, type, side, amount, price) {
@@ -481,9 +482,10 @@ module.exports = class kabus extends Exchange {
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         // Fetch latest OHLCV data of a single symbol from the local PriceServer
-        const stock_code = this.parseSymbol (symbol)['Code'];
-        const response = await this.fetch ('http://127.0.0.1:8999/charts/' + stock_code + '/JPY/1m', 'GET');
-        const ohlcvs = JSON.parse (response[stock_code]);
+        const market = this.parseSymbol (symbol)['Market'];
+        const fiat = this.parseSymbol (symbol)['Fiat'];
+        const response = await this.fetch ('http://127.0.0.1:8999/charts/' + market + '/' + fiat + '/' + timeframe, 'GET');
+        const ohlcvs = JSON.parse (response[market]);
         const data = [];
         for (let i = 0; i < ohlcvs.length; i++) {
             data.push (ohlcvs[i].slice (0, -1));

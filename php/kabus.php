@@ -133,12 +133,13 @@ class kabus extends Exchange {
 
     public function parse_symbol($symbol) {
         // Parse $symbol string to get code and $exchange ID
-        // {$symbol} = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
+        // {$symbol} = {code}@{exchnage_id}/{$fiat} e.g., 8306@1/JPY
         // NOTE => code in CCXT/freqtrade corresponds to "Symbol" in Kabus.
         $market = explode('/', $symbol)[0];
+        $fiat = explode('/', $symbol)[1];
         $stock_code = explode('@', $market)[0];
         $exchange = intval(explode('@', $market)[1]);
-        return array( 'Code' => $stock_code, 'Exchange' => $exchange, 'Market' => $market );
+        return array( 'Code' => $stock_code, 'Exchange' => $exchange, 'Market' => $market, 'Fiat' => $fiat );
     }
 
     public function prepare_order($symbol, $type, $side, $amount, $price) {
@@ -489,9 +490,10 @@ class kabus extends Exchange {
 
     public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
         // Fetch latest OHLCV $data of a single $symbol from the local PriceServer
-        $stock_code = $this->parse_symbol($symbol)['Code'];
-        $response = $this->fetch('http://127.0.0.1:8999/charts/' . $stock_code . '/JPY/1m', 'GET');
-        $ohlcvs = json_decode($response[$stock_code], $as_associative_array = true);
+        $market = $this->parse_symbol($symbol)['Market'];
+        $fiat = $this->parse_symbol($symbol)['Fiat'];
+        $response = $this->fetch('http://127.0.0.1:8999/charts/' . $market . '/' . $fiat . '/' . $timeframe, 'GET');
+        $ohlcvs = json_decode($response[$market], $as_associative_array = true);
         $data = array();
         for ($i = 0; $i < count($ohlcvs); $i++) {
             $data[] = mb_substr($ohlcvs[$i], 0, -1 - 0);

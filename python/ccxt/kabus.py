@@ -131,9 +131,10 @@ class kabus(Exchange):
         # {symbol} = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
         # NOTE: code in CCXT/freqtrade corresponds to "Symbol" in Kabus.
         market = symbol.split('/')[0]
+        fiat = symbol.split('/')[1]
         stock_code = market.split('@')[0]
         exchange = int(market.split('@')[1])
-        return {'Code': stock_code, 'Exchange': exchange, 'Market': market}
+        return {'Code': stock_code, 'Exchange': exchange, 'Market': market, 'Fiat': fiat}
 
     def prepare_order(self, symbol, type, side, amount, price):
         # 現物株式取引用のパラメタ設定
@@ -451,9 +452,10 @@ class kabus(Exchange):
 
     def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
         # Fetch latest OHLCV data of a single symbol from the local PriceServer
-        stock_code = self.parse_symbol(symbol)['Code']
-        response = self.fetch('http://127.0.0.1:8999/charts/' + stock_code + '/JPY/1m', 'GET')
-        ohlcvs = json.loads(response[stock_code])
+        market = self.parse_symbol(symbol)['Market']
+        fiat = self.parse_symbol(symbol)['Fiat']
+        response = self.fetch('http://127.0.0.1:8999/charts/' + market + '/' + fiat + '/' + timeframe, 'GET')
+        ohlcvs = json.loads(response[market])
         data = []
         for i in range(0, len(ohlcvs)):
             data.append(ohlcvs[i][0:-1])
