@@ -12,6 +12,9 @@ module.exports = class kabus extends Exchange {
             'version': 'v1',
             'rateLimit': 1000,
             'timeframes': {
+                '5s': '5s',
+                '10s': '10s',
+                '30s': '30s',
                 '1m': '1m',
                 '3m': '3m',
                 '5m': '5m',
