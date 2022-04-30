@@ -44,7 +44,9 @@ module.exports = class kabus extends Exchange {
                 'cancelOrder': true,
                 'createOrder': true,
                 'fetchBalance': true,
+                'fetchClosedOrders': true,
                 'fetchOHLCV': true,
+                'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
                 'fetchOrders': true,
@@ -367,6 +369,28 @@ module.exports = class kabus extends Exchange {
         params['product'] = 0;
         const response = await this.privateGetOrders (params);
         return this.parseOrders (response);
+    }
+
+    async fetchOpenOrders (since = undefined, limit = 100, params = {}) {
+        const orders = await this.fetchOrders ();
+        const open_orders = [];
+        for (let i = 0; i < orders.length; i++) {
+            if (orders[i]['status'] === 'open') {
+                open_orders.push (orders[i]);
+            }
+        }
+        return open_orders;
+    }
+
+    async fetchClosedOrders (since = undefined, limit = 100, params = {}) {
+        const orders = await this.fetchOrders ();
+        const closed_orders = [];
+        for (let i = 0; i < orders.length; i++) {
+            if (orders[i]['status'] === 'closed') {
+                closed_orders.push (orders[i]);
+            }
+        }
+        return closed_orders;
     }
 
     async fetchOrder (id, symbol = undefined, params = {}) {

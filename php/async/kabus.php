@@ -52,7 +52,9 @@ class kabus extends Exchange {
                 'cancelOrder' => true,
                 'createOrder' => true,
                 'fetchBalance' => true,
+                'fetchClosedOrders' => true,
                 'fetchOHLCV' => true,
+                'fetchOpenOrders' => true,
                 'fetchOrder' => true,
                 'fetchOrderBook' => true,
                 'fetchOrders' => true,
@@ -375,6 +377,28 @@ class kabus extends Exchange {
         $params['product'] = 0;
         $response = yield $this->privateGetOrders ($params);
         return $this->parse_orders($response);
+    }
+
+    public function fetch_open_orders($since = null, $limit = 100, $params = array ()) {
+        $orders = yield $this->fetch_orders();
+        $open_orders = array();
+        for ($i = 0; $i < count($orders); $i++) {
+            if ($orders[$i]['status'] === 'open') {
+                $open_orders[] = $orders[$i];
+            }
+        }
+        return $open_orders;
+    }
+
+    public function fetch_closed_orders($since = null, $limit = 100, $params = array ()) {
+        $orders = yield $this->fetch_orders();
+        $closed_orders = array();
+        for ($i = 0; $i < count($orders); $i++) {
+            if ($orders[$i]['status'] === 'closed') {
+                $closed_orders[] = $orders[$i];
+            }
+        }
+        return $closed_orders;
     }
 
     public function fetch_order($id, $symbol = null, $params = array ()) {

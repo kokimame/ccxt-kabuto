@@ -52,7 +52,9 @@ class kabus(Exchange):
                 'cancelOrder': True,
                 'createOrder': True,
                 'fetchBalance': True,
+                'fetchClosedOrders': True,
                 'fetchOHLCV': True,
+                'fetchOpenOrders': True,
                 'fetchOrder': True,
                 'fetchOrderBook': True,
                 'fetchOrders': True,
@@ -358,6 +360,22 @@ class kabus(Exchange):
         params['product'] = 0
         response = await self.privateGetOrders(params)
         return self.parse_orders(response)
+
+    async def fetch_open_orders(self, since=None, limit=100, params={}):
+        orders = await self.fetch_orders()
+        open_orders = []
+        for i in range(0, len(orders)):
+            if orders[i]['status'] == 'open':
+                open_orders.append(orders[i])
+        return open_orders
+
+    async def fetch_closed_orders(self, since=None, limit=100, params={}):
+        orders = await self.fetch_orders()
+        closed_orders = []
+        for i in range(0, len(orders)):
+            if orders[i]['status'] == 'closed':
+                closed_orders.append(orders[i])
+        return closed_orders
 
     async def fetch_order(self, id, symbol=None, params={}):
         if symbol is None:
