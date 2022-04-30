@@ -77,10 +77,10 @@ class kabus(Exchange):
                     ],
                     'post': [
                         'token',
-                        'sendorder',  # FIXME: Not used. Directly calling fetch2
+                        'sendorder',
                     ],
                     'put': [
-                        'register',  # FIXME: Not used. Directly calling fetch2
+                        'register',
                         'cancelorder',
                     ],
                 },
@@ -111,8 +111,11 @@ class kabus(Exchange):
         request = '/' + self.implode_params(path, params)
         query = self.omit(params, self.extract_params(path))
         if method == 'GET':
+            # Append URL variables separated by "?"
             if query:
                 request += '?' + self.urlencode(query)
+        elif (method == 'POST') or (method == 'PUT'):
+            body = self.json(query)
         self.check_required_credentials()
         if not self.apiKey:
             self.apiKey = self.fetch_token()
@@ -122,6 +125,15 @@ class kabus(Exchange):
             'Content-Type': 'application/json',
         }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
+
+    def parse_symbol(self, symbol):
+        # Parse symbol string to get code and exchange ID
+        # {symbol} = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
+        # NOTE: code in CCXT/freqtrade corresponds to "Symbol" in Kabus.
+        market = symbol.split('/')[0]
+        stock_code = market.split('@')[0]
+        exchange = int(market.split('@')[1])
+        return {'Code': stock_code, 'Exchange': exchange, 'Market': market}
 
     def prepare_order(self, symbol, type, side, amount, price):
         # 現物株式取引用のパラメタ設定
@@ -158,8 +170,7 @@ class kabus(Exchange):
             'Price': orderParam['Price'],                   # 注文価格: <int>
             'ExpireDay': 0,                                 # 注文有効期限: <int> *0=本日中
         }
-        body_str = json.dumps(body)
-        response = await self.fetch2('sendorder', 'private', 'POST', params, None, body_str, {}, {})
+        response = await self.privatePostSendorder(self.extend(body, params))
         # {'OrderId': '20220423A01N86096051', 'Result': 0}
         id = self.safe_string(response, 'OrderId')
         return {
@@ -392,8 +403,7 @@ class kabus(Exchange):
             'OrderID': id,
             'Password': self.kabusapi_password,
         }
-        body_str = json.dumps(body)
-        return await self.fetch2('cancelorder', 'private', 'PUT', params, None, body_str, {}, {})
+        return await self.privatePutCancelorder(self.extend(body, params))
 
     def parse_balance(self, response):
         # Parse and organize balance information.
@@ -449,24 +459,13 @@ class kabus(Exchange):
             data.append(ohlcvs[i][0:-1])
         return data
 
-    def parse_symbol(self, symbol):
-        # Parse symbol string to get code and exchange ID
-        # ---
-        # symbol = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
-        # NOTE: code in CCXT/freqtrade is "Symbol" in Kabus.
-        market = symbol.split('/')[0]
-        stock_code = market.split('@')[0]
-        exchange = int(market.split('@')[1])
-        return {'Code': stock_code, 'Exchange': exchange, 'Market': market}
-
     async def register_whitelist(self, whitelist):
         # Register whitelist symbols.
         # FIXME: This cannnot be use from Worker due to the nature of the bot process.
         # PriceServer has a function for the same purpose and that is used instead.
-        symbols = {'Symbols': []}
+        body = {'Symbols': []}
         for i in range(0, len(whitelist)):
             tickerVal = self.parse_symbol(whitelist[i])
-            symbols['Symbols'].append(tickerVal)
-        body = json.dumps(symbols)
-        response = self.fetch2('register', 'private', 'PUT', {}, None, body, {}, {})
+            body['Symbols'].append(tickerVal)
+        response = self.privatePutRegister(body)
         return response['RegistList']

@@ -77,10 +77,10 @@ class kabus extends Exchange {
                     ),
                     'post' => array(
                         'token',
-                        'sendorder', // FIXME => Not used. Directly calling fetch2
+                        'sendorder',
                     ),
                     'put' => array(
-                        'register', // FIXME => Not used. Directly calling fetch2
+                        'register',
                         'cancelorder',
                     ),
                 ),
@@ -112,9 +112,12 @@ class kabus extends Exchange {
         $request = '/' . $this->implode_params($path, $params);
         $query = $this->omit($params, $this->extract_params($path));
         if ($method === 'GET') {
+            // Append URL variables separated by "?"
             if ($query) {
                 $request .= '?' . $this->urlencode($query);
             }
+        } else if (($method === 'POST') || ($method === 'PUT')) {
+            $body = $this->json($query);
         }
         $this->check_required_credentials();
         if (!$this->apiKey) {
@@ -126,6 +129,16 @@ class kabus extends Exchange {
             'Content-Type' => 'application/json',
         );
         return array( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
+    }
+
+    public function parse_symbol($symbol) {
+        // Parse $symbol string to get code and $exchange ID
+        // {$symbol} = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
+        // NOTE => code in CCXT/freqtrade corresponds to "Symbol" in Kabus.
+        $market = explode('/', $symbol)[0];
+        $stock_code = explode('@', $market)[0];
+        $exchange = intval(explode('@', $market)[1]);
+        return array( 'Code' => $stock_code, 'Exchange' => $exchange, 'Market' => $market );
     }
 
     public function prepare_order($symbol, $type, $side, $amount, $price) {
@@ -165,8 +178,7 @@ class kabus extends Exchange {
             'Price' => $orderParam['Price'],                   // 注文価格 => <int>
             'ExpireDay' => 0,                                 // 注文有効期限 => <int> *0=本日中
         );
-        $body_str = json_encode ($body);
-        $response = $this->fetch2('sendorder', 'private', 'POST', $params, null, $body_str, array(), array());
+        $response = $this->privatePostSendorder (array_merge($body, $params));
         // array('OrderId' => '20220423A01N86096051', 'Result' => 0)
         $id = $this->safe_string($response, 'OrderId');
         return array(
@@ -419,8 +431,7 @@ class kabus extends Exchange {
             'OrderID' => $id,
             'Password' => $this->kabusapi_password,
         );
-        $body_str = json_encode ($body);
-        return $this->fetch2('cancelorder', 'private', 'PUT', $params, null, $body_str, array(), array());
+        return $this->privatePutCancelorder (array_merge($body, $params));
     }
 
     public function parse_balance($response) {
@@ -488,28 +499,16 @@ class kabus extends Exchange {
         return $data;
     }
 
-    public function parse_symbol($symbol) {
-        // Parse $symbol string to get code and $exchange ID
-        // ---
-        // $symbol = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
-        // NOTE => code in CCXT/freqtrade is "Symbol" in Kabus.
-        $market = explode('/', $symbol)[0];
-        $stock_code = explode('@', $market)[0];
-        $exchange = intval(explode('@', $market)[1]);
-        return array( 'Code' => $stock_code, 'Exchange' => $exchange, 'Market' => $market );
-    }
-
     public function register_whitelist($whitelist) {
-        // Register $whitelist $symbols->
+        // Register $whitelist symbols.
         // FIXME => This cannnot be use from Worker due to the nature of the bot process.
         // PriceServer has a function for the same purpose and that is used instead.
-        $symbols = array( 'Symbols' => array() );
+        $body = array( 'Symbols' => array() );
         for ($i = 0; $i < count($whitelist); $i++) {
             $tickerVal = $this->parse_symbol($whitelist[$i]);
-            $symbols['Symbols'][] = $tickerVal;
+            $body['Symbols'][] = $tickerVal;
         }
-        $body = json_encode ($symbols);
-        $response = $this->fetch2('register', 'private', 'PUT', array(), null, $body, array(), array());
+        $response = $this->privatePutRegister ($body);
         return $response['RegistList'];
     }
 }

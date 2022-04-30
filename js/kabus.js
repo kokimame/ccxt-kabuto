@@ -69,10 +69,10 @@ module.exports = class kabus extends Exchange {
                     ],
                     'post': [
                         'token',
-                        'sendorder', // FIXME: Not used. Directly calling fetch2
+                        'sendorder',
                     ],
                     'put': [
-                        'register', // FIXME: Not used. Directly calling fetch2
+                        'register',
                         'cancelorder',
                     ],
                 },
@@ -104,9 +104,12 @@ module.exports = class kabus extends Exchange {
         let request = '/' + this.implodeParams (path, params);
         const query = this.omit (params, this.extractParams (path));
         if (method === 'GET') {
+            // Append URL variables separated by "?"
             if (Object.keys (query).length) {
                 request += '?' + this.urlencode (query);
             }
+        } else if ((method === 'POST') || (method === 'PUT')) {
+            body = this.json (query);
         }
         this.checkRequiredCredentials ();
         if (!this.apiKey) {
@@ -118,6 +121,16 @@ module.exports = class kabus extends Exchange {
             'Content-Type': 'application/json',
         };
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+    }
+
+    parseSymbol (symbol) {
+        // Parse symbol string to get code and exchange ID
+        // {symbol} = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
+        // NOTE: code in CCXT/freqtrade corresponds to "Symbol" in Kabus.
+        const market = symbol.split ('/')[0];
+        const stock_code = market.split ('@')[0];
+        const exchange = parseInt (market.split ('@')[1]);
+        return { 'Code': stock_code, 'Exchange': exchange, 'Market': market };
     }
 
     prepareOrder (symbol, type, side, amount, price) {
@@ -157,8 +170,7 @@ module.exports = class kabus extends Exchange {
             'Price': orderParam['Price'],                   // 注文価格: <int>
             'ExpireDay': 0,                                 // 注文有効期限: <int> *0=本日中
         };
-        const body_str = JSON.stringify (body);
-        const response = await this.fetch2 ('sendorder', 'private', 'POST', params, undefined, body_str, {}, {});
+        const response = await this.privatePostSendorder (this.extend (body, params));
         // {'OrderId': '20220423A01N86096051', 'Result': 0}
         const id = this.safeString (response, 'OrderId');
         return {
@@ -411,8 +423,7 @@ module.exports = class kabus extends Exchange {
             'OrderID': id,
             'Password': this.kabusapi_password,
         };
-        const body_str = JSON.stringify (body);
-        return await this.fetch2 ('cancelorder', 'private', 'PUT', params, undefined, body_str, {}, {});
+        return await this.privatePutCancelorder (this.extend (body, params));
     }
 
     parseBalance (response) {
@@ -480,28 +491,16 @@ module.exports = class kabus extends Exchange {
         return data;
     }
 
-    parseSymbol (symbol) {
-        // Parse symbol string to get code and exchange ID
-        // ---
-        // symbol = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
-        // NOTE: code in CCXT/freqtrade is "Symbol" in Kabus.
-        const market = symbol.split ('/')[0];
-        const stock_code = market.split ('@')[0];
-        const exchange = parseInt (market.split ('@')[1]);
-        return { 'Code': stock_code, 'Exchange': exchange, 'Market': market };
-    }
-
     async registerWhitelist (whitelist) {
         // Register whitelist symbols.
         // FIXME: This cannnot be use from Worker due to the nature of the bot process.
         // PriceServer has a function for the same purpose and that is used instead.
-        const symbols = { 'Symbols': [] };
+        const body = { 'Symbols': [] };
         for (let i = 0; i < whitelist.length; i++) {
             const tickerVal = this.parseSymbol (whitelist[i]);
-            symbols['Symbols'].push (tickerVal);
+            body['Symbols'].push (tickerVal);
         }
-        const body = JSON.stringify (symbols);
-        const response = this.fetch2 ('register', 'private', 'PUT', {}, undefined, body, {}, {});
+        const response = this.privatePutRegister (body);
         return response['RegistList'];
     }
 };
