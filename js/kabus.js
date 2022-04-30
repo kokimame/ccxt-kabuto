@@ -50,6 +50,7 @@ module.exports = class kabus extends Exchange {
                 'fetchOrders': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
+                'fetchTrades': true,
                 'registerWhitelist': true,
             },
             'precision': {
@@ -62,6 +63,7 @@ module.exports = class kabus extends Exchange {
                         'board/{symbol}',
                         'wallet/cash',
                         'orders',
+                        'positions',
                     ],
                     'post': [
                         'token',
@@ -96,13 +98,18 @@ module.exports = class kabus extends Exchange {
 
     sign (path, api = 'private', method = 'GET', params = {}, headers = undefined, body = undefined) {
         // Attach header and other necessary parameters to the API request.
-        // This is called before a REST API request thrown to the server.
-        // TODO: Handle differently 'public' call and 'private' call to improve security.
+        // This is called before evert REST API request is thrown to the server.
+        let request = '/' + this.implodeParams (path, params);
+        const query = this.omit (params, this.extractParams (path));
+        if (method === 'GET') {
+            if (Object.keys (query).length) {
+                request += '?' + this.urlencode (query);
+            }
+        }
         this.checkRequiredCredentials ();
         if (!this.apiKey) {
             this.apiKey = this.fetchToken ();
         }
-        const request = '/' + this.implodeParams (path, params);
         const url = this.implodeParams (this.urls['api'], { 'ipaddr': this.ipaddr }) + request;
         headers = {
             'X-API-KEY': this.apiKey,
@@ -111,15 +118,15 @@ module.exports = class kabus extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    prepareOrder (pair, type, side, amount, price) {
+    prepareOrder (symbol, type, side, amount, price) {
         // 現物株式取引用のパラメタ設定
-        const ticker = this.parseTicker (pair);
+        const symbolParam = this.parseSymbol (symbol);
         if (type === 'market') {
             price = 0; // 成行執行→price=0
         }
         return {
-            'Symbol': ticker['Symbol'],
-            'Exchange': ticker['Exchange'],
+            'Symbol': symbolParam['Code'],
+            'Exchange': symbolParam['Exchange'],
             'Side': this.safeString ({ 'sell': '1', 'buy': '2' }, side),
             'DelivType': this.safeInteger ({ 'sell': 0, 'buy': 2 }, side), // 現物買→預り金
             'FundType': this.safeString ({ 'sell': '  ', 'buy': 'AA' }, side), // 現物買→信用代用
@@ -129,10 +136,10 @@ module.exports = class kabus extends Exchange {
         };
     }
 
-    async createOrder (pair, type, side, amount, price = undefined, params = {}) {
+    async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
         // https://kabucom.github.io/kabusapi/reference/index.html#operation/sendorderPost
         await this.loadMarkets ();
-        const orderParam = this.prepareOrder (pair, type, side, amount, price);
+        const orderParam = this.prepareOrder (symbol, type, side, amount, price);
         const body = {
             'Password': this.kabusapi_password,             // 注文パスワード: <string>
             'Symbol': orderParam['Symbol'],                 // 銘柄コード: <string>
@@ -189,8 +196,8 @@ module.exports = class kabus extends Exchange {
                 'symbol': markets[i] + '/JPY',
                 'base': 'JPY',
                 'quote': 'JPY',
-                'maker': 0.001,
-                'taker': 0.001,
+                'maker': 0.0,
+                'taker': 0.0,
                 'active': true,
                 'min_unit': 100,
                 // value limits when placing orders on this market
@@ -214,6 +221,54 @@ module.exports = class kabus extends Exchange {
             });
         }
         return result;
+    }
+
+    parseTrade (trade, market = undefined) {
+        // {
+        //      'ExecutionID': None,
+        //      'AccountType': '4',
+        //      'Symbol': '5020',
+        //      'SymbolName': 'ＥＮＥＯＳホールディングス',
+        //      'Exchange': '1',
+        //      'ExchangeName': '東証プ',
+        //      'Price': '454.0',
+        //      'LeavesQty': '100.0',
+        //      'HoldQty': '0.0',
+        //      'Side': '2',
+        //      'CurrentPrice': '456.2',
+        //      'Valuation': '45620.0',
+        //      'ProfitLoss': '220.0',
+        //      'ProfitLossRate': '0.484581497797356828193832600'
+        // }
+        const price = this.safeFloat (trade, 'Price');
+        const side = this.safeStringLower ({ '1': 'sell', '2': 'buy' }, trade['Side']);
+        const leavesQty = this.safeFloat (trade, 'LeavesQty');
+        const holdQty = this.safeFloat (trade, 'HoldQty');
+        const amount = leavesQty - holdQty;
+        return this.safeTrade ({
+            'timestamp': undefined,
+            'datetime': undefined,
+            'symbol': market['symbol'],
+            'id': market['symbol'],
+            'order': undefined,
+            'type': undefined,
+            'side': side,
+            'takerOrMaker': undefined,
+            'price': price,
+            'amount': amount,
+            'cost': undefined,
+            'fee': undefined,
+            'info': trade,
+        }, market);
+    }
+
+    async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const stock_code = this.parseSymbol (symbol)['Code'];
+        const request = { 'product': 0, 'addInfo': 'true', 'symbol': stock_code };
+        const response = await this.privateGetPositions (this.extend (request, params));
+        return this.parseTrades (response, market, since, limit);
     }
 
     parseOrder (order, market = undefined) {
@@ -268,7 +323,7 @@ module.exports = class kabus extends Exchange {
         const cumQty = this.safeFloat (order, 'CumQty');
         const side = this.safeStringLower ({ '1': 'sell', '2': 'buy' }, order['Side']);
         const timestamp = this.parse8601 (this.safeString (order, 'RecvTime'));
-        const symbol = this.safeString (order, 'Symbol');
+        const stock_code = this.safeString (order, 'Symbol');
         const exchange = this.safeString (order, 'Exchange');
         let order_type = 'limit';
         if (price === 0) {
@@ -290,7 +345,7 @@ module.exports = class kabus extends Exchange {
             'datetime': this.iso8601 (timestamp),
             'lastTradeTimestamp': undefined,
             'status': status,
-            'symbol': symbol + '@' + exchange + '/JPY',
+            'symbol': stock_code + '@' + exchange + '/JPY',
             'type': order_type,
             'timeInForce': undefined,
             'postOnly': undefined,
@@ -307,7 +362,7 @@ module.exports = class kabus extends Exchange {
         }, market);
     }
 
-    async fetchOrders (symbol = undefined, since = undefined, limit = 100, params = {}) {
+    async fetchOrders (since = undefined, limit = 100, params = {}) {
         await this.loadMarkets ();
         params['product'] = 0;
         const response = await this.privateGetOrders (params);
@@ -318,7 +373,7 @@ module.exports = class kabus extends Exchange {
         if (symbol === undefined) {
             throw new ArgumentsRequired (this.id + ' fetchOrder() requires a `symbol` argument');
         }
-        const orders = await this.fetchOrders (symbol);
+        const orders = await this.fetchOrders ();
         const ordersById = this.indexBy (orders, 'id');
         if (id in ordersById) {
             return ordersById[id];
@@ -326,7 +381,7 @@ module.exports = class kabus extends Exchange {
         throw new OrderNotFound (this.id + 'No order found with id ' + id);
     }
 
-    async cancelOrder (id, symbol = undefined, params = {}) {
+    async cancelOrder (id, params = {}) {
         await this.loadMarkets ();
         const body = {
             'OrderID': id,
@@ -355,27 +410,11 @@ module.exports = class kabus extends Exchange {
         return this.parseBalance (response);
     }
 
-    async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
-        await this.loadMarkets ();
-        return [];
-    }
-
-    parseTicker (pair) {
-        // Parse ticker string to get symbol and exchange code
-        const identifier = pair.split ('/')[0];
-        const symbol = identifier.split ('@')[0];
-        const exchange = parseInt (identifier.split ('@')[1]);
-        return { 'Symbol': symbol, 'Exchange': exchange };
-    }
-
     async fetchTicker (symbol, params = {}) {
         // Fetch board informatio of a single symbol.
         await this.loadMarkets ();
-        symbol = symbol.slice (0, -4);
-        const request = {
-            'symbol': symbol,
-        };
-        return this.privateGetBoardSymbol (this.extend (request, params));
+        params['symbol'] = this.parseSymbol (symbol)['Market'];
+        return this.privateGetBoardSymbol (params);
     }
 
     async fetchTickers (symbol, params = {}) {
@@ -404,14 +443,25 @@ module.exports = class kabus extends Exchange {
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
         // Fetch latest OHLCV data of a single symbol from the local PriceServer
-        symbol = symbol.slice (0, -4);
-        const response = await this.fetch ('http://127.0.0.1:8999/charts/' + symbol + '/JPY/1m', 'GET');
-        const ohlcvs = JSON.parse (response[symbol]);
+        const stock_code = this.parseSymbol (symbol)['Code'];
+        const response = await this.fetch ('http://127.0.0.1:8999/charts/' + stock_code + '/JPY/1m', 'GET');
+        const ohlcvs = JSON.parse (response[stock_code]);
         const data = [];
         for (let i = 0; i < ohlcvs.length; i++) {
             data.push (ohlcvs[i].slice (0, -1));
         }
         return data;
+    }
+
+    parseSymbol (symbol) {
+        // Parse symbol string to get code and exchange ID
+        // ---
+        // symbol = {code}@{exchnage_id}/{fiat} e.g., 8306@1/JPY
+        // NOTE: code in CCXT/freqtrade is "Symbol" in Kabus.
+        const market = symbol.split ('/')[0];
+        const stock_code = market.split ('@')[0];
+        const exchange = parseInt (market.split ('@')[1]);
+        return { 'Code': stock_code, 'Exchange': exchange, 'Market': market };
     }
 
     async registerWhitelist (whitelist) {
@@ -420,7 +470,7 @@ module.exports = class kabus extends Exchange {
         // PriceServer has a function for the same purpose and that is used instead.
         const symbols = { 'Symbols': [] };
         for (let i = 0; i < whitelist.length; i++) {
-            const tickerVal = this.parseTicker (whitelist[i]);
+            const tickerVal = this.parseSymbol (whitelist[i]);
             symbols['Symbols'].push (tickerVal);
         }
         const body = JSON.stringify (symbols);
