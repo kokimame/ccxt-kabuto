@@ -160,7 +160,7 @@ class kabus(Exchange):
         await self.load_markets()
         orderParam = self.prepare_order(symbol, type, side, amount, price)
         body = {
-            'Password': self.kabusapi_password,             # 注文パスワード: <string>
+            'Password': self.kabucom_password,             # 注文パスワード: <string>
             'Symbol': orderParam['Symbol'],                 # 銘柄コード: <string>
             'Exchange': orderParam['Exchange'],             # 市場コード: <int> 1(東証), 3(名証), 5(福証), 6(札証)
             'SecurityType': 1,                              # 商品種別: <int> 1(株式)
@@ -405,7 +405,7 @@ class kabus(Exchange):
         await self.load_markets()
         body = {
             'OrderID': id,
-            'Password': self.kabusapi_password,
+            'Password': self.kabucom_password,
         }
         return await self.privatePutCancelorder(self.extend(body, params))
 
@@ -433,6 +433,8 @@ class kabus(Exchange):
         return self.privateGetBoardSymbol(params)
 
     async def fetch_tickers(self, symbols, params={}):
+        if symbols is None:
+            raise ArgumentsRequired(self.id + ' fetchTickers() requires a symbols argument, an array of symbols')
         result = []
         for i in range(0, len(symbols)):
             result.append(self.fetch_ticker(symbols[i]))

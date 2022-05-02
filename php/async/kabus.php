@@ -168,7 +168,7 @@ class kabus extends Exchange {
         yield $this->load_markets();
         $orderParam = $this->prepare_order($symbol, $type, $side, $amount, $price);
         $body = array(
-            'Password' => $this->kabusapi_password,             // 注文パスワード => <string>
+            'Password' => $this->kabucom_password,             // 注文パスワード => <string>
             'Symbol' => $orderParam['Symbol'],                 // 銘柄コード => <string>
             'Exchange' => $orderParam['Exchange'],             // 市場コード => <int> 1 (東証), 3 (名証), 5 (福証), 6 (札証)
             'SecurityType' => 1,                              // 商品種別 => <int> 1 (株式)
@@ -433,7 +433,7 @@ class kabus extends Exchange {
         yield $this->load_markets();
         $body = array(
             'OrderID' => $id,
-            'Password' => $this->kabusapi_password,
+            'Password' => $this->kabucom_password,
         );
         return yield $this->privatePutCancelorder (array_merge($body, $params));
     }
@@ -465,6 +465,9 @@ class kabus extends Exchange {
     }
 
     public function fetch_tickers($symbols, $params = array ()) {
+        if ($symbols === null) {
+            throw new ArgumentsRequired($this->id . ' fetchTickers() requires a $symbols argument, an array of symbols');
+        }
         $result = array();
         for ($i = 0; $i < count($symbols); $i++) {
             $result[] = $this->fetch_ticker($symbols[$i]);
