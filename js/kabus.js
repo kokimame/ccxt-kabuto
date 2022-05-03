@@ -457,14 +457,18 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchTickers (symbols, params = {}) {
-        if (symbols === undefined) {
-            throw new ArgumentsRequired (this.id + ' fetchTickers() requires a symbols argument, an array of symbols');
-        }
-        const result = [];
-        for (let i = 0; i < symbols.length; i++) {
-            result.push (this.fetchTicker (symbols[i]));
-        }
-        return result;
+        // Cannot fgure out what this is for.
+        // Below is an experiment but it blocks the /balance command.
+        // --------------
+        // if (symbols === undefined) {
+        //     throw new ArgumentsRequired (this.id + ' fetchTickers() requires a symbols argument, an array of symbols');
+        // }
+        // const result = [];
+        // for (let i = 0; i < symbols.length; i++) {
+        //     result.push (this.fetchTicker (symbols[i]));
+        // }
+        // return result;
+        return [];
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {

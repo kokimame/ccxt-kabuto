@@ -433,12 +433,15 @@ class kabus(Exchange):
         return self.privateGetBoardSymbol(params)
 
     def fetch_tickers(self, symbols, params={}):
-        if symbols is None:
-            raise ArgumentsRequired(self.id + ' fetchTickers() requires a symbols argument, an array of symbols')
-        result = []
-        for i in range(0, len(symbols)):
-            result.append(self.fetch_ticker(symbols[i]))
-        return result
+        # if symbols is None:
+        #     raise ArgumentsRequired(self.id + ' fetchTickers() requires a symbols argument, an array of symbols')
+        # }
+        # result = []
+        # for i in range(0, len(symbols)):
+        #     result.append(self.fetch_ticker(symbols[i]))
+        # }
+        # return result
+        return []
 
     def fetch_order_book(self, symbol, limit=None, params={}):
         # Fetch order book information of a single symbol

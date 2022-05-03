@@ -465,14 +465,15 @@ class kabus extends Exchange {
     }
 
     public function fetch_tickers($symbols, $params = array ()) {
-        if ($symbols === null) {
-            throw new ArgumentsRequired($this->id . ' fetchTickers() requires a $symbols argument, an array of symbols');
-        }
-        $result = array();
-        for ($i = 0; $i < count($symbols); $i++) {
-            $result[] = $this->fetch_ticker($symbols[$i]);
-        }
-        return $result;
+        // if ($symbols === null) {
+        //     throw new ArgumentsRequired($this->id . ' fetchTickers() requires a $symbols argument, an array of symbols');
+        // }
+        // $result = array();
+        // for ($i = 0; $i < count($symbols); $i++) {
+        //     $result[] = $this->fetch_ticker($symbols[$i]);
+        // }
+        // return $result;
+        return array();
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {
