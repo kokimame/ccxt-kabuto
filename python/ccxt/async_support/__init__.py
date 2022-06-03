@@ -4,7 +4,7 @@
 
 # -----------------------------------------------------------------------------
 
-__version__ = '1.73.44'
+__version__ = '1.84.75'
 
 # -----------------------------------------------------------------------------
 
@@ -29,6 +29,7 @@ from ccxt.base.errors import AccountSuspended               # noqa: F401
 from ccxt.base.errors import ArgumentsRequired              # noqa: F401
 from ccxt.base.errors import BadRequest                     # noqa: F401
 from ccxt.base.errors import BadSymbol                      # noqa: F401
+from ccxt.base.errors import MarginModeAlreadySet           # noqa: F401
 from ccxt.base.errors import BadResponse                    # noqa: F401
 from ccxt.base.errors import NullResponse                   # noqa: F401
 from ccxt.base.errors import InsufficientFunds              # noqa: F401
@@ -74,6 +75,7 @@ from ccxt.async_support.bitget import bitget                              # noqa
 from ccxt.async_support.bithumb import bithumb                            # noqa: F401
 from ccxt.async_support.bitmart import bitmart                            # noqa: F401
 from ccxt.async_support.bitmex import bitmex                              # noqa: F401
+from ccxt.async_support.bitopro import bitopro                            # noqa: F401
 from ccxt.async_support.bitpanda import bitpanda                          # noqa: F401
 from ccxt.async_support.bitrue import bitrue                              # noqa: F401
 from ccxt.async_support.bitso import bitso                                # noqa: F401
@@ -81,6 +83,7 @@ from ccxt.async_support.bitstamp import bitstamp                          # noqa
 from ccxt.async_support.bitstamp1 import bitstamp1                        # noqa: F401
 from ccxt.async_support.bittrex import bittrex                            # noqa: F401
 from ccxt.async_support.bitvavo import bitvavo                            # noqa: F401
+from ccxt.async_support.bkex import bkex                                  # noqa: F401
 from ccxt.async_support.bl3p import bl3p                                  # noqa: F401
 from ccxt.async_support.blockchaincom import blockchaincom                # noqa: F401
 from ccxt.async_support.btcalpha import btcalpha                          # noqa: F401
@@ -100,6 +103,7 @@ from ccxt.async_support.coinbasepro import coinbasepro                    # noqa
 from ccxt.async_support.coincheck import coincheck                        # noqa: F401
 from ccxt.async_support.coinex import coinex                              # noqa: F401
 from ccxt.async_support.coinfalcon import coinfalcon                      # noqa: F401
+from ccxt.async_support.coinflex import coinflex                          # noqa: F401
 from ccxt.async_support.coinmate import coinmate                          # noqa: F401
 from ccxt.async_support.coinone import coinone                            # noqa: F401
 from ccxt.async_support.coinspot import coinspot                          # noqa: F401
@@ -110,7 +114,6 @@ from ccxt.async_support.delta import delta                                # noqa
 from ccxt.async_support.deribit import deribit                            # noqa: F401
 from ccxt.async_support.digifinex import digifinex                        # noqa: F401
 from ccxt.async_support.eqonex import eqonex                              # noqa: F401
-from ccxt.async_support.equos import equos                                # noqa: F401
 from ccxt.async_support.exmo import exmo                                  # noqa: F401
 from ccxt.async_support.flowbtc import flowbtc                            # noqa: F401
 from ccxt.async_support.fmfwio import fmfwio                              # noqa: F401
@@ -134,13 +137,14 @@ from ccxt.async_support.kucoin import kucoin                              # noqa
 from ccxt.async_support.kucoinfutures import kucoinfutures                # noqa: F401
 from ccxt.async_support.kuna import kuna                                  # noqa: F401
 from ccxt.async_support.latoken import latoken                            # noqa: F401
-from ccxt.async_support.latoken1 import latoken1                          # noqa: F401
 from ccxt.async_support.lbank import lbank                                # noqa: F401
+from ccxt.async_support.lbank2 import lbank2                              # noqa: F401
 from ccxt.async_support.liquid import liquid                              # noqa: F401
 from ccxt.async_support.luno import luno                                  # noqa: F401
 from ccxt.async_support.lykke import lykke                                # noqa: F401
 from ccxt.async_support.mercado import mercado                            # noqa: F401
 from ccxt.async_support.mexc import mexc                                  # noqa: F401
+from ccxt.async_support.mexc3 import mexc3                                # noqa: F401
 from ccxt.async_support.ndax import ndax                                  # noqa: F401
 from ccxt.async_support.novadax import novadax                            # noqa: F401
 from ccxt.async_support.oceanex import oceanex                            # noqa: F401
@@ -195,6 +199,7 @@ exchanges = [
     'bithumb',
     'bitmart',
     'bitmex',
+    'bitopro',
     'bitpanda',
     'bitrue',
     'bitso',
@@ -202,6 +207,7 @@ exchanges = [
     'bitstamp1',
     'bittrex',
     'bitvavo',
+    'bkex',
     'bl3p',
     'blockchaincom',
     'btcalpha',
@@ -221,6 +227,7 @@ exchanges = [
     'coincheck',
     'coinex',
     'coinfalcon',
+    'coinflex',
     'coinmate',
     'coinone',
     'coinspot',
@@ -231,7 +238,6 @@ exchanges = [
     'deribit',
     'digifinex',
     'eqonex',
-    'equos',
     'exmo',
     'flowbtc',
     'fmfwio',
@@ -255,13 +261,14 @@ exchanges = [
     'kucoinfutures',
     'kuna',
     'latoken',
-    'latoken1',
     'lbank',
+    'lbank2',
     'liquid',
     'luno',
     'lykke',
     'mercado',
     'mexc',
+    'mexc3',
     'ndax',
     'novadax',
     'oceanex',

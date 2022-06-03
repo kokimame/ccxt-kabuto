@@ -59,6 +59,8 @@ module.exports = class cdax extends Exchange {
                 'fetchTickers': true,
                 'fetchTime': true,
                 'fetchTrades': true,
+                'fetchTradingFee': false,
+                'fetchTradingFees': false,
                 'fetchTradingLimits': true,
                 'fetchWithdrawals': true,
                 'withdraw': true,
@@ -251,6 +253,13 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchTime (params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchTime
+         * @description fetches the current integer timestamp in milliseconds from the exchange server
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {int} the current integer timestamp in milliseconds from the exchange server
+         */
         const response = await this.publicGetCommonTimestamp (params);
         return this.safeInteger (response, 'data');
     }
@@ -333,6 +342,13 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchMarkets
+         * @description retrieves data on all markets for cdax
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         const response = await this.publicGetCommonSymbols (params);
         //
         //    {
@@ -363,10 +379,10 @@ module.exports = class cdax extends Exchange {
         //        ]
         //    }
         //
-        const markets = this.safeValue (response, 'data');
+        const markets = this.safeValue (response, 'data', []);
         const numMarkets = markets.length;
         if (numMarkets < 1) {
-            throw new NetworkError (this.id + ' publicGetCommonSymbols returned empty response: ' + this.json (markets));
+            throw new NetworkError (this.id + ' fetchMarkets() returned empty response: ' + this.json (markets));
         }
         const result = [];
         for (let i = 0; i < markets.length; i++) {
@@ -515,10 +531,19 @@ module.exports = class cdax extends Exchange {
             'baseVolume': baseVolume,
             'quoteVolume': quoteVolume,
             'info': ticker,
-        }, market, false);
+        }, market);
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -561,6 +586,14 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -595,9 +628,17 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchTickers (symbols = undefined, params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchTickers
+         * @description fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+         * @param {[str]|undefined} symbols unified symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {dict} an array of [ticker structures]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const response = await this.marketGetTickers (params);
-        const tickers = this.safeValue (response, 'data');
+        const tickers = this.safeValue (response, 'data', []);
         const timestamp = this.safeInteger (response, 'ts');
         const result = {};
         for (let i = 0; i < tickers.length; i++) {
@@ -745,6 +786,16 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchTrades (symbol, since = undefined, limit = 1000, params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -778,7 +829,7 @@ module.exports = class cdax extends Exchange {
         //         ]
         //     }
         //
-        const data = this.safeValue (response, 'data');
+        const data = this.safeValue (response, 'data', []);
         let result = [];
         for (let i = 0; i < data.length; i++) {
             const trades = this.safeValue (data[i], 'data', []);
@@ -788,7 +839,7 @@ module.exports = class cdax extends Exchange {
             }
         }
         result = this.sortBy (result, 'timestamp');
-        return this.filterBySymbolSinceLimit (result, symbol, since, limit);
+        return this.filterBySymbolSinceLimit (result, market['symbol'], since, limit);
     }
 
     parseOHLCV (ohlcv, market = undefined) {
@@ -815,6 +866,17 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = 1000, params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {str} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {str} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -848,6 +910,13 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchCurrencies
+         * @description fetches all available currencies on an exchange
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {dict} an associative dictionary of currencies
+         */
         const request = {
             'language': this.options['language'],
         };
@@ -892,7 +961,7 @@ module.exports = class cdax extends Exchange {
         //         ]
         //     }
         //
-        const currencies = this.safeValue (response, 'data');
+        const currencies = this.safeValue (response, 'data', []);
         const result = {};
         for (let i = 0; i < currencies.length; i++) {
             const currency = currencies[i];
@@ -964,6 +1033,13 @@ module.exports = class cdax extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name cdax#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the cdax api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         await this.loadMarkets ();
         await this.loadAccounts ();
         const method = this.options['fetchBalanceMethod'];
@@ -1144,7 +1220,6 @@ module.exports = class cdax extends Exchange {
         }
         const marketId = this.safeString (order, 'symbol');
         market = this.safeMarket (marketId, market);
-        const symbol = market['symbol'];
         const timestamp = this.safeInteger (order, 'created-at');
         const clientOrderId = this.safeString (order, 'client-order-id');
         const filledString = this.safeString2 (order, 'filled-amount', 'field-amount'); // typo in their API, filled amount
@@ -1157,10 +1232,7 @@ module.exports = class cdax extends Exchange {
         const feeCostString = this.safeString2 (order, 'filled-fees', 'field-fees'); // typo in their API, filled fees
         let fee = undefined;
         if (feeCostString !== undefined) {
-            let feeCurrency = undefined;
-            if (market !== undefined) {
-                feeCurrency = (side === 'sell') ? market['quote'] : market['base'];
-            }
+            const feeCurrency = (side === 'sell') ? market['quote'] : market['base'];
             fee = {
                 'cost': feeCostString,
                 'currency': feeCurrency,
@@ -1173,7 +1245,7 @@ module.exports = class cdax extends Exchange {
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
             'lastTradeTimestamp': undefined,
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': type,
             'timeInForce': undefined,
             'postOnly': undefined,
@@ -1345,8 +1417,8 @@ module.exports = class cdax extends Exchange {
         return response;
     }
 
-    currencyToPrecision (currency, fee) {
-        return this.decimalToPrecision (fee, 0, this.currencies[currency]['precision']);
+    currencyToPrecision (code, fee, networkCode = undefined) {
+        return this.decimalToPrecision (fee, 0, this.currencies[code]['precision']);
     }
 
     safeNetwork (networkId) {
@@ -1369,10 +1441,7 @@ module.exports = class cdax extends Exchange {
         //     }
         //
         const address = this.safeString (depositAddress, 'address');
-        let tag = this.safeString (depositAddress, 'addressTag');
-        if (tag === '') {
-            tag = undefined;
-        }
+        const tag = this.safeString (depositAddress, 'addressTag');
         const currencyId = this.safeString (depositAddress, 'currency');
         currency = this.safeCurrency (currencyId, currency);
         const code = this.safeCurrencyCode (currencyId, currency);
@@ -1492,7 +1561,7 @@ module.exports = class cdax extends Exchange {
         const network = this.safeStringUpper (transaction, 'chain');
         return {
             'info': transaction,
-            'id': this.safeString (transaction, 'id'),
+            'id': this.safeString2 (transaction, 'id', 'data'),
             'txid': this.safeString (transaction, 'tx-hash'),
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
@@ -1566,11 +1635,7 @@ module.exports = class cdax extends Exchange {
             params = this.omit (params, 'network');
         }
         const response = await this.privatePostDwWithdrawApiCreate (this.extend (request, params));
-        const id = this.safeString (response, 'data');
-        return {
-            'info': response,
-            'id': id,
-        };
+        return this.parseTransaction (response, currency);
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {

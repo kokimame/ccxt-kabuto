@@ -17,7 +17,7 @@ class poloniex extends Exchange {
             'id' => 'poloniex',
             'name' => 'Poloniex',
             'countries' => array( 'US' ),
-            'rateLimit' => 1000, // up to 6 calls per second
+            'rateLimit' => 166.667, // 6 calls per second,  1000ms / 6 = 166.667ms between requests
             'certified' => false,
             'pro' => true,
             'has' => array(
@@ -41,6 +41,7 @@ class poloniex extends Exchange {
                 'fetchMarkets' => true,
                 'fetchMyTrades' => true,
                 'fetchOHLCV' => true,
+                'fetchOpenInterestHistory' => false,
                 'fetchOpenOrder' => true, // true endpoint for a single open order
                 'fetchOpenOrders' => true, // true endpoint for open orders
                 'fetchOrderBook' => true,
@@ -50,9 +51,13 @@ class poloniex extends Exchange {
                 'fetchTicker' => true,
                 'fetchTickers' => true,
                 'fetchTrades' => true,
+                'fetchTradingFee' => false,
                 'fetchTradingFees' => true,
                 'fetchTransactions' => true,
+                'fetchTransfer' => false,
+                'fetchTransfers' => false,
                 'fetchWithdrawals' => true,
+                'transfer' => true,
                 'withdraw' => true,
             ),
             'timeframes' => array(
@@ -77,47 +82,47 @@ class poloniex extends Exchange {
             'api' => array(
                 'public' => array(
                     'get' => array(
-                        'return24hVolume',
-                        'returnChartData',
-                        'returnCurrencies',
-                        'returnLoanOrders',
-                        'returnOrderBook',
-                        'returnTicker',
-                        'returnTradeHistory',
+                        'return24hVolume' => 1,
+                        'returnChartData' => 1,
+                        'returnCurrencies' => 1,
+                        'returnLoanOrders' => 1,
+                        'returnOrderBook' => 1,
+                        'returnTicker' => 1,
+                        'returnTradeHistory' => 1,
                     ),
                 ),
                 'private' => array(
                     'post' => array(
-                        'buy',
-                        'cancelLoanOffer',
-                        'cancelOrder',
-                        'cancelAllOrders',
-                        'closeMarginPosition',
-                        'createLoanOffer',
-                        'generateNewAddress',
-                        'getMarginPosition',
-                        'marginBuy',
-                        'marginSell',
-                        'moveOrder',
-                        'returnActiveLoans',
-                        'returnAvailableAccountBalances',
-                        'returnBalances',
-                        'returnCompleteBalances',
-                        'returnDepositAddresses',
-                        'returnDepositsWithdrawals',
-                        'returnFeeInfo',
-                        'returnLendingHistory',
-                        'returnMarginAccountSummary',
-                        'returnOpenLoanOffers',
-                        'returnOpenOrders',
-                        'returnOrderTrades',
-                        'returnOrderStatus',
-                        'returnTradableBalances',
-                        'returnTradeHistory',
-                        'sell',
-                        'toggleAutoRenew',
-                        'transferBalance',
-                        'withdraw',
+                        'buy' => 1,
+                        'cancelLoanOffer' => 1,
+                        'cancelOrder' => 1,
+                        'cancelAllOrders' => 1,
+                        'closeMarginPosition' => 1,
+                        'createLoanOffer' => 1,
+                        'generateNewAddress' => 1,
+                        'getMarginPosition' => 1,
+                        'marginBuy' => 1,
+                        'marginSell' => 1,
+                        'moveOrder' => 1,
+                        'returnActiveLoans' => 1,
+                        'returnAvailableAccountBalances' => 1,
+                        'returnBalances' => 1,
+                        'returnCompleteBalances' => 1,
+                        'returnDepositAddresses' => 1,
+                        'returnDepositsWithdrawals' => 1,
+                        'returnFeeInfo' => 1,
+                        'returnLendingHistory' => 1,
+                        'returnMarginAccountSummary' => 1,
+                        'returnOpenLoanOffers' => 1,
+                        'returnOpenOrders' => 1,
+                        'returnOrderTrades' => 1,
+                        'returnOrderStatus' => 1,
+                        'returnTradableBalances' => 1,
+                        'returnTradeHistory' => 1,
+                        'sell' => 1,
+                        'toggleAutoRenew' => 1,
+                        'transferBalance' => 1,
+                        'withdraw' => 1,
                     ),
                 ),
             ),
@@ -204,6 +209,18 @@ class poloniex extends Exchange {
                         ),
                     ),
                 ),
+                'accountsByType' => array(
+                    'spot' => 'exchange',
+                    'margin' => 'margin',
+                    'future' => 'futures',
+                    'lending' => 'lending',
+                ),
+                'accountsById' => array(
+                    'exchange' => 'spot',
+                    'margin' => 'margin',
+                    'futures' => 'future',
+                    'lending' => 'lending',
+                ),
             ),
             'exceptions' => array(
                 'exact' => array(
@@ -216,13 +233,15 @@ class poloniex extends Exchange {
                     'Currently in maintenance mode.' => '\\ccxt\\OnMaintenance',
                     'Order not found, or you are not the person who placed it.' => '\\ccxt\\OrderNotFound',
                     'Invalid API key/secret pair.' => '\\ccxt\\AuthenticationError',
-                    'Please do not make more than 8 API calls per second.' => '\\ccxt\\DDoSProtection',
+                    'Please do not make more than 8 API calls per second.' => '\\ccxt\\RateLimitExceeded',
+                    'This IP has been temporarily throttled. Please ensure your requests are valid and try again in one minute.' => '\\ccxt\\RateLimitExceeded',
                     'Rate must be greater than zero.' => '\\ccxt\\InvalidOrder', // array("error":"Rate must be greater than zero.")
                     'Invalid currency pair.' => '\\ccxt\\BadSymbol', // array("error":"Invalid currency pair.")
                     'Invalid currencyPair parameter.' => '\\ccxt\\BadSymbol', // array("error":"Invalid currencyPair parameter.")
                     'Trading is disabled in this market.' => '\\ccxt\\BadSymbol', // array("error":"Trading is disabled in this market.")
                     'Invalid orderNumber parameter.' => '\\ccxt\\OrderNotFound',
                     'Order is beyond acceptable bounds.' => '\\ccxt\\InvalidOrder', // array("error":"Order is beyond acceptable bounds.","fee":"0.00155000","currencyPair":"USDT_BOBA")
+                    'This account is closed.' => '\\ccxt\\AccountSuspended', // array("error":"This account is closed.")
                 ),
                 'broad' => array(
                     'Total must be at least' => '\\ccxt\\InvalidOrder', // array("error":"Total must be at least 0.0001.")
@@ -230,7 +249,7 @@ class poloniex extends Exchange {
                     'This account is locked.' => '\\ccxt\\AccountSuspended', // array("error":"This account is locked.")
                     'Not enough' => '\\ccxt\\InsufficientFunds',
                     'Nonce must be greater' => '\\ccxt\\InvalidNonce',
-                    'You have already called cancelOrder or moveOrder on this order.' => '\\ccxt\\CancelPending',
+                    'You have already called cancelOrder' => '\\ccxt\\CancelPending', // array("error":"You have already called cancelOrder, moveOrder, or cancelReplace on this order. Please wait for that call's response.")
                     'Amount must be at least' => '\\ccxt\\InvalidOrder', // array("error":"Amount must be at least 0.000001.")
                     'is either completed or does not exist' => '\\ccxt\\OrderNotFound', // array("error":"Order 587957810791 is either completed or does not exist.")
                     'Error pulling ' => '\\ccxt\\ExchangeError', // array("error":"Error pulling order book")
@@ -263,6 +282,15 @@ class poloniex extends Exchange {
     }
 
     public function fetch_ohlcv($symbol, $timeframe = '5m', $since = null, $limit = null, $params = array ()) {
+        /**
+         * fetches historical candlestick data containing the open, high, low, and close price, and the volume of a $market
+         * @param {str} $symbol unified $symbol of the $market to fetch OHLCV data for
+         * @param {str} $timeframe the length of time each candle represents
+         * @param {int|null} $since timestamp in ms of the earliest candle to fetch
+         * @param {int|null} $limit the maximum amount of candles to fetch
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         yield $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -304,6 +332,11 @@ class poloniex extends Exchange {
     }
 
     public function fetch_markets($params = array ()) {
+        /**
+         * retrieves data on all $markets for poloniex
+         * @param {dict} $params extra parameters specific to the exchange api endpoint
+         * @return {[dict]} an array of objects representing $market data
+         */
         $markets = yield $this->publicGetReturnTicker ($params);
         $keys = is_array($markets) ? array_keys($markets) : array();
         $result = array();
@@ -381,6 +414,11 @@ class poloniex extends Exchange {
     }
 
     public function fetch_balance($params = array ()) {
+        /**
+         * query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {dict} a ~@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure balance structure~
+         */
         yield $this->load_markets();
         $request = array(
             'account' => 'all',
@@ -398,7 +436,7 @@ class poloniex extends Exchange {
 
     public function fetch_trading_fees($params = array ()) {
         yield $this->load_markets();
-        $fees = yield $this->privatePostReturnFeeInfo ($params);
+        $response = yield $this->privatePostReturnFeeInfo ($params);
         //
         //     {
         //         makerFee => '0.00100000',
@@ -409,16 +447,29 @@ class poloniex extends Exchange {
         //         nextTier => 500000,
         //     }
         //
-        return array(
-            'info' => $fees,
-            'maker' => $this->safe_number($fees, 'makerFee'),
-            'taker' => $this->safe_number($fees, 'takerFee'),
-            'withdraw' => array(),
-            'deposit' => array(),
-        );
+        $result = array();
+        for ($i = 0; $i < count($this->symbols); $i++) {
+            $symbol = $this->symbols[$i];
+            $result[$symbol] = array(
+                'info' => $response,
+                'symbol' => $symbol,
+                'maker' => $this->safe_number($response, 'makerFee'),
+                'taker' => $this->safe_number($response, 'takerFee'),
+                'percentage' => true,
+                'tierBased' => true,
+            );
+        }
+        return $result;
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {
+        /**
+         * fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} $symbol unified $symbol of the market to fetch the order book for
+         * @param {int|null} $limit the maximum amount of order book entries to return
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {dict} A dictionary of {@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure order book structures} indexed by market symbols
+         */
         yield $this->load_markets();
         $request = array(
             'currencyPair' => $this->market_id($symbol),
@@ -502,10 +553,16 @@ class poloniex extends Exchange {
             'baseVolume' => $this->safe_string($ticker, 'quoteVolume'),
             'quoteVolume' => $this->safe_string($ticker, 'baseVolume'),
             'info' => $ticker,
-        ), $market, false);
+        ), $market);
     }
 
     public function fetch_tickers($symbols = null, $params = array ()) {
+        /**
+         * fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each $market
+         * @param {[str]|null} $symbols unified $symbols of the markets to fetch the $ticker for, all $market tickers are returned if not assigned
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {dict} an array of {@link https://docs.ccxt.com/en/latest/manual.html#$ticker-structure $ticker structures}
+         */
         yield $this->load_markets();
         $response = yield $this->publicGetReturnTicker ($params);
         $ids = is_array($response) ? array_keys($response) : array();
@@ -531,6 +588,11 @@ class poloniex extends Exchange {
     }
 
     public function fetch_currencies($params = array ()) {
+        /**
+         * fetches all available currencies on an exchange
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {dict} an associative dictionary of currencies
+         */
         $response = yield $this->publicGetReturnCurrencies ($params);
         //
         //     {
@@ -591,6 +653,12 @@ class poloniex extends Exchange {
     }
 
     public function fetch_ticker($symbol, $params = array ()) {
+        /**
+         * fetches a price $ticker, a statistical calculation with the information calculated over the past 24 hours for a specific $market
+         * @param {str} $symbol unified $symbol of the $market to fetch the $ticker for
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {dict} a {@link https://docs.ccxt.com/en/latest/manual.html#$ticker-structure $ticker structure}
+         */
         yield $this->load_markets();
         $market = $this->market($symbol);
         $response = yield $this->publicGetReturnTicker ($params);
@@ -617,6 +685,19 @@ class poloniex extends Exchange {
 
     public function parse_trade($trade, $market = null) {
         //
+        // fetchTrades
+        //
+        //      {
+        //          globalTradeID => "667563407",
+        //          tradeID => "1984256",
+        //          date => "2022-03-01 20:06:06",
+        //          type => "buy",
+        //          rate => "0.13361871",
+        //          amount => "28.40841257",
+        //          total => "3.79589544",
+        //          orderNumber => "159992152911"
+        //      }
+        //
         // fetchMyTrades
         //
         //     {
@@ -624,7 +705,7 @@ class poloniex extends Exchange {
         //       tradeID => '42582',
         //       date => '2020-06-16 09:47:50',
         //       rate => '0.000079980000',
-        //       $amount => '75215.00000000',
+        //       amount => '75215.00000000',
         //       total => '6.01569570',
         //       $fee => '0.00095000',
         //       $feeDisplay => '0.26636100 TRX (0.07125%)',
@@ -655,34 +736,25 @@ class poloniex extends Exchange {
         $fee = null;
         $priceString = $this->safe_string($trade, 'rate');
         $amountString = $this->safe_string($trade, 'amount');
-        $price = $this->parse_number($priceString);
-        $amount = $this->parse_number($amountString);
-        $cost = null;
         $costString = $this->safe_string($trade, 'total');
-        if ($costString === null) {
-            $costString = Precise::string_mul($priceString, $amountString);
-            $cost = $this->parse_number($costString);
-        } else {
-            $cost = $this->parse_number($costString);
-        }
         $feeDisplay = $this->safe_string($trade, 'feeDisplay');
         if ($feeDisplay !== null) {
             $parts = explode(' ', $feeDisplay);
-            $feeCost = $this->safe_number($parts, 0);
-            if ($feeCost !== null) {
+            $feeCostString = $this->safe_string($parts, 0);
+            if ($feeCostString !== null) {
                 $feeCurrencyId = $this->safe_string($parts, 1);
                 $feeCurrencyCode = $this->safe_currency_code($feeCurrencyId);
-                $feeRate = $this->safe_string($parts, 2);
-                if ($feeRate !== null) {
-                    $feeRate = str_replace('(', '', $feeRate);
-                    $feeRateParts = explode('%', $feeRate);
-                    $feeRate = $this->safe_string($feeRateParts, 0);
-                    $feeRate = floatval($feeRate) / 100;
+                $feeRateString = $this->safe_string($parts, 2);
+                if ($feeRateString !== null) {
+                    $feeRateString = str_replace('(', '', $feeRateString);
+                    $feeRateParts = explode('%', $feeRateString);
+                    $feeRateString = $this->safe_string($feeRateParts, 0);
+                    $feeRateString = Precise::string_div($feeRateString, '100');
                 }
                 $fee = array(
-                    'cost' => $feeCost,
+                    'cost' => $feeCostString,
                     'currency' => $feeCurrencyCode,
-                    'rate' => $feeRate,
+                    'rate' => $feeRateString,
                 );
             }
         } else {
@@ -692,9 +764,9 @@ class poloniex extends Exchange {
                 $feeBase = ($side === 'buy') ? $amountString : $costString;
                 $feeRateString = Precise::string_div($feeCostString, $feeBase);
                 $fee = array(
-                    'cost' => $this->parse_number($feeCostString),
+                    'cost' => $feeCostString,
                     'currency' => $feeCurrencyCode,
-                    'rate' => $this->parse_number($feeRateString),
+                    'rate' => $feeRateString,
                 );
             }
         }
@@ -703,7 +775,7 @@ class poloniex extends Exchange {
         if ($takerAdjustment !== null) {
             $takerOrMaker = 'taker';
         }
-        return array(
+        return $this->safe_trade(array(
             'id' => $id,
             'info' => $trade,
             'timestamp' => $timestamp,
@@ -713,14 +785,22 @@ class poloniex extends Exchange {
             'type' => 'limit',
             'side' => $side,
             'takerOrMaker' => $takerOrMaker,
-            'price' => $price,
-            'amount' => $amount,
-            'cost' => $cost,
+            'price' => $priceString,
+            'amount' => $amountString,
+            'cost' => $costString,
             'fee' => $fee,
-        );
+        ), $market);
     }
 
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
+        /**
+         * get the list of most recent $trades for a particular $symbol
+         * @param {str} $symbol unified $symbol of the $market to fetch $trades for
+         * @param {int|null} $since timestamp in ms of the earliest trade to fetch
+         * @param {int|null} $limit the maximum amount of $trades to fetch
+         * @param {dict} $params extra parameters specific to the poloniex api endpoint
+         * @return {[dict]} a list of ~@link https://docs.ccxt.com/en/latest/manual.html?#public-$trades trade structures~
+         */
         yield $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -1274,6 +1354,63 @@ class poloniex extends Exchange {
         );
     }
 
+    public function transfer($code, $amount, $fromAccount, $toAccount, $params = array ()) {
+        yield $this->load_markets();
+        $currency = $this->currency($code);
+        $amount = $this->currency_to_precision($code, $amount);
+        $accountsByType = $this->safe_value($this->options, 'accountsByType', array());
+        $fromId = $this->safe_string($accountsByType, $fromAccount, $fromAccount);
+        $toId = $this->safe_string($accountsByType, $toAccount, $fromAccount);
+        $request = array(
+            'amount' => $amount,
+            'currency' => $currency['id'],
+            'fromAccount' => $fromId,
+            'toAccount' => $toId,
+        );
+        $response = yield $this->privatePostTransferBalance (array_merge($request, $params));
+        //
+        //    {
+        //        success => '1',
+        //        message => 'Transferred 1.00000000 USDT from exchange to lending account.'
+        //    }
+        //
+        return $this->parse_transfer($response, $currency);
+    }
+
+    public function parse_transfer_status($status) {
+        $statuses = array(
+            '1' => 'ok',
+        );
+        return $this->safe_string($statuses, $status, $status);
+    }
+
+    public function parse_transfer($transfer, $currency = null) {
+        //
+        //    {
+        //        success => '1',
+        //        $message => 'Transferred 1.00000000 USDT from exchange to lending account.'
+        //    }
+        //
+        $message = $this->safe_string($transfer, 'message');
+        $words = explode(' ', $message);
+        $amount = $this->safe_number($words, 1);
+        $currencyId = $this->safe_string($words, 2);
+        $fromAccountId = $this->safe_string($words, 4);
+        $toAccountId = $this->safe_string($words, 6);
+        $accountsById = $this->safe_value($this->options, 'accountsById', array());
+        return array(
+            'info' => $transfer,
+            'id' => null,
+            'timestamp' => null,
+            'datetime' => null,
+            'currency' => $this->safe_currency_code($currencyId, $currency),
+            'amount' => $amount,
+            'fromAccount' => $this->safe_string($accountsById, $fromAccountId),
+            'toAccount' => $this->safe_string($accountsById, $toAccountId),
+            'status' => $this->parse_order_status($this->safe_string($transfer, 'success', 'failed')),
+        );
+    }
+
     public function withdraw($code, $amount, $address, $tag = null, $params = array ()) {
         list($tag, $params) = $this->handle_withdraw_tag_and_params($tag, $params);
         $this->check_address($address);
@@ -1302,10 +1439,7 @@ class poloniex extends Exchange {
         //         withdrawalNumber => 13449869
         //     }
         //
-        return array(
-            'info' => $response,
-            'id' => $this->safe_string($response, 'withdrawalNumber'),
-        );
+        return $this->parse_transaction($response, $currency);
     }
 
     public function fetch_transactions_helper($code = null, $since = null, $limit = null, $params = array ()) {
@@ -1474,6 +1608,14 @@ class poloniex extends Exchange {
         //         "timestamp" => 1523834337,
         //         "canResendEmail" => 0,
         //         "withdrawalNumber" => 11162900
+        //     }
+        //
+        // withdraw
+        //
+        //     {
+        //         response => 'Withdrew 1.00000000 USDT.',
+        //         email2FA => false,
+        //         withdrawalNumber => 13449869
         //     }
         //
         $timestamp = $this->safe_timestamp($transaction, 'timestamp');

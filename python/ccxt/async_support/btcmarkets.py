@@ -49,12 +49,12 @@ class btcmarkets(Exchange):
                 'fetchFundingRateHistory': False,
                 'fetchFundingRates': False,
                 'fetchIndexOHLCV': False,
-                'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
                 'fetchOHLCV': True,
+                'fetchOpenInterestHistory': False,
                 'fetchOpenOrders': True,
                 'fetchOrder': True,
                 'fetchOrderBook': True,
@@ -72,6 +72,7 @@ class btcmarkets(Exchange):
                 'setLeverage': False,
                 'setMarginMode': False,
                 'setPositionMode': False,
+                'withdraw': True,
             },
             'urls': {
                 'logo': 'https://user-images.githubusercontent.com/51840849/89731817-b3fb8480-da52-11ea-817f-783b08aaf32b.jpg',
@@ -192,9 +193,12 @@ class btcmarkets(Exchange):
         return await self.fetch_transactions_with_method('privateGetWithdrawals', code, since, limit, params)
 
     def parse_transaction_status(self, status):
-        # todo: find more statuses
         statuses = {
+            'Accepted': 'pending',
+            'Pending Authorization': 'pending',
             'Complete': 'ok',
+            'Cancelled': 'cancelled',
+            'Failed': 'failed',
         }
         return self.safe_string(statuses, status, status)
 
@@ -302,6 +306,11 @@ class btcmarkets(Exchange):
         }
 
     async def fetch_markets(self, params={}):
+        """
+        retrieves data on all markets for btcmarkets
+        :param dict params: extra parameters specific to the exchange api endpoint
+        :returns [dict]: an array of objects representing market data
+        """
         response = await self.publicGetMarkets(params)
         #
         #     [
@@ -386,6 +395,11 @@ class btcmarkets(Exchange):
         return result
 
     async def fetch_time(self, params={}):
+        """
+        fetches the current integer timestamp in milliseconds from the exchange server
+        :param dict params: extra parameters specific to the btcmarkets api endpoint
+        :returns int: the current integer timestamp in milliseconds from the exchange server
+        """
         response = await self.publicGetTime(params)
         #
         #     {
@@ -407,6 +421,11 @@ class btcmarkets(Exchange):
         return self.safe_balance(result)
 
     async def fetch_balance(self, params={}):
+        """
+        query for balance and get the amount of funds available for trading or funds locked in orders
+        :param dict params: extra parameters specific to the btcmarkets api endpoint
+        :returns dict: a `balance structure <https://docs.ccxt.com/en/latest/manual.html?#balance-structure>`
+        """
         await self.load_markets()
         response = await self.privateGetAccountsMeBalances(params)
         return self.parse_balance(response)
@@ -432,6 +451,15 @@ class btcmarkets(Exchange):
         ]
 
     async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        """
+        fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+        :param str symbol: unified symbol of the market to fetch OHLCV data for
+        :param str timeframe: the length of time each candle represents
+        :param int|None since: timestamp in ms of the earliest candle to fetch
+        :param int|None limit: the maximum amount of candles to fetch
+        :param dict params: extra parameters specific to the btcmarkets api endpoint
+        :returns [[int]]: A list of candles ordered as timestamp, open, high, low, close, volume
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -458,6 +486,13 @@ class btcmarkets(Exchange):
         return self.parse_ohlcvs(response, market, timeframe, since, limit)
 
     async def fetch_order_book(self, symbol, limit=None, params={}):
+        """
+        fetches information on open orders with bid(buy) and ask(sell) prices, volumes and other data
+        :param str symbol: unified symbol of the market to fetch the order book for
+        :param int|None limit: the maximum amount of order book entries to return
+        :param dict params: extra parameters specific to the btcmarkets api endpoint
+        :returns dict: A dictionary of `order book structures <https://docs.ccxt.com/en/latest/manual.html#order-book-structure>` indexed by market symbols
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -533,9 +568,15 @@ class btcmarkets(Exchange):
             'baseVolume': baseVolume,
             'quoteVolume': quoteVolume,
             'info': ticker,
-        }, market, False)
+        }, market)
 
     async def fetch_ticker(self, symbol, params={}):
+        """
+        fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+        :param str symbol: unified symbol of the market to fetch the ticker for
+        :param dict params: extra parameters specific to the btcmarkets api endpoint
+        :returns dict: a `ticker structure <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -597,26 +638,8 @@ class btcmarkets(Exchange):
         #
         timestamp = self.parse8601(self.safe_string(trade, 'timestamp'))
         marketId = self.safe_string(trade, 'marketId')
-        symbol = None
-        base = None
-        quote = None
-        if marketId is not None:
-            if marketId in self.markets_by_id:
-                market = self.markets_by_id[marketId]
-            else:
-                baseId, quoteId = marketId.split('-')
-                base = self.safe_currency_code(baseId)
-                quote = self.safe_currency_code(quoteId)
-                symbol = base + '/' + quote
-        if (symbol is None) and (market is not None):
-            symbol = market['symbol']
-            base = market['base']
-            quote = market['quote']
-        feeCurrencyCode = None
-        if quote == 'AUD':
-            feeCurrencyCode = quote
-        else:
-            feeCurrencyCode = base
+        market = self.safe_market(marketId, market, '-')
+        feeCurrencyCode = market['quote'] if (market['quote'] == 'AUD') else market['base']
         side = self.safe_string(trade, 'side')
         if side == 'Bid':
             side = 'buy'
@@ -640,7 +663,7 @@ class btcmarkets(Exchange):
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'order': orderId,
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': None,
             'side': side,
             'price': priceString,
@@ -651,6 +674,14 @@ class btcmarkets(Exchange):
         }, market)
 
     async def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        """
+        get the list of most recent trades for a particular symbol
+        :param str symbol: unified symbol of the market to fetch trades for
+        :param int|None since: timestamp in ms of the earliest trade to fetch
+        :param int|None limit: the maximum amount of trades to fetch
+        :param dict params: extra parameters specific to the btcmarkets api endpoint
+        :returns [dict]: a list of `trade structures <https://docs.ccxt.com/en/latest/manual.html?#public-trades>`
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -814,17 +845,7 @@ class btcmarkets(Exchange):
         #
         timestamp = self.parse8601(self.safe_string(order, 'creationTime'))
         marketId = self.safe_string(order, 'marketId')
-        symbol = None
-        if marketId is not None:
-            if marketId in self.markets_by_id:
-                market = self.markets_by_id[marketId]
-            else:
-                baseId, quoteId = marketId.split('-')
-                base = self.safe_currency_code(baseId)
-                quote = self.safe_currency_code(quoteId)
-                symbol = base + '/' + quote
-        if (symbol is None) and (market is not None):
-            symbol = market['symbol']
+        market = self.safe_market(marketId, market, '-')
         side = self.safe_string(order, 'side')
         if side == 'Bid':
             side = 'buy'
@@ -847,7 +868,7 @@ class btcmarkets(Exchange):
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
             'lastTradeTimestamp': None,
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': type,
             'timeInForce': timeInForce,
             'postOnly': postOnly,
@@ -937,20 +958,37 @@ class btcmarkets(Exchange):
         #
         return self.parse_trades(response, market, since, limit)
 
-    def lookup_symbol_from_market_id(self, marketId):
-        market = None
-        symbol = None
-        if marketId is not None:
-            if marketId in self.markets_by_id:
-                market = self.markets_by_id[marketId]
-            else:
-                baseId, quoteId = marketId.split('-')
-                base = self.safe_currency_code(baseId)
-                quote = self.safe_currency_code(quoteId)
-                symbol = base + '/' + quote
-        if (symbol is None) and (market is not None):
-            symbol = market['symbol']
-        return symbol
+    async def withdraw(self, code, amount, address, tag=None, params={}):
+        tag, params = self.handle_withdraw_tag_and_params(tag, params)
+        await self.load_markets()
+        currency = self.currency(code)
+        request = {
+            'currency_id': currency['id'],
+            'amount': self.currency_to_precision(code, amount),
+        }
+        if code != 'AUD':
+            self.check_address(address)
+            request['toAddress'] = address
+        if tag is not None:
+            request['toAddress'] = address + '?dt=' + tag
+        response = await self.privatePostWithdrawals(self.extend(request, params))
+        #
+        #      {
+        #          "id": "4126657",
+        #          "assetName": "XRP",
+        #          "amount": "25",
+        #          "type": "Withdraw",
+        #          "creationTime": "2019-09-04T00:04:10.973000Z",
+        #          "status": "Pending Authorization",
+        #          "description": "XRP withdraw from [me@test.com] to Address: abc amount: 25 fee: 0",
+        #          "fee": "0",
+        #          "lastUpdate": "2019-09-04T00:04:11.018000Z",
+        #          "paymentDetail": {
+        #              "address": "abc"
+        #          }
+        #      }
+        #
+        return self.parse_transaction(response, currency)
 
     def nonce(self):
         return self.milliseconds()

@@ -8,6 +8,7 @@ namespace ccxt\async;
 use Exception; // a common import
 use \ccxt\ExchangeError;
 use \ccxt\ArgumentsRequired;
+use \ccxt\Precise;
 
 class bitpanda extends Exchange {
 
@@ -48,12 +49,12 @@ class bitpanda extends Exchange {
                 'fetchFundingRateHistory' => false,
                 'fetchFundingRates' => false,
                 'fetchIndexOHLCV' => false,
-                'fetchIsolatedPositions' => false,
                 'fetchLeverage' => false,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => true,
                 'fetchOHLCV' => true,
+                'fetchOpenInterestHistory' => false,
                 'fetchOpenOrders' => true,
                 'fetchOrder' => true,
                 'fetchOrderBook' => true,
@@ -66,7 +67,10 @@ class bitpanda extends Exchange {
                 'fetchTickers' => true,
                 'fetchTime' => true,
                 'fetchTrades' => true,
+                'fetchTradingFee' => false,
                 'fetchTradingFees' => true,
+                'fetchTransfer' => false,
+                'fetchTransfers' => false,
                 'fetchWithdrawals' => true,
                 'privateAPI' => true,
                 'publicAPI' => true,
@@ -74,6 +78,7 @@ class bitpanda extends Exchange {
                 'setLeverage' => false,
                 'setMarginMode' => false,
                 'setPositionMode' => false,
+                'transfer' => false,
                 'withdraw' => true,
             ),
             'timeframes' => array(
@@ -276,6 +281,11 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_time($params = array ()) {
+        /**
+         * fetches the current integer timestamp in milliseconds from the exchange server
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {int} the current integer timestamp in milliseconds from the exchange server
+         */
         $response = yield $this->publicGetTime ($params);
         //
         //     {
@@ -287,6 +297,11 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_currencies($params = array ()) {
+        /**
+         * fetches all available currencies on an exchange
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {dict} an associative dictionary of currencies
+         */
         $response = yield $this->publicGetCurrencies ($params);
         //
         //     array(
@@ -319,6 +334,11 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_markets($params = array ()) {
+        /**
+         * retrieves data on all markets for bitpanda
+         * @param {dict} $params extra parameters specific to the exchange api endpoint
+         * @return {[dict]} an array of objects representing $market data
+         */
         $response = yield $this->publicGetInstruments ($params);
         //
         //     array(
@@ -412,7 +432,7 @@ class bitpanda extends Exchange {
         //     array(
         //         {
         //             "fee_group_id":"default",
-        //             "display_text":"The standard $fee plan.",
+        //             "display_text":"The standard fee plan.",
         //             "fee_tiers":array(
         //                 array("volume":"0.0","fee_group_id":"default","maker_fee":"0.1","taker_fee":"0.15"),
         //                 array("volume":"100.0","fee_group_id":"default","maker_fee":"0.1","taker_fee":"0.13"),
@@ -427,43 +447,22 @@ class bitpanda extends Exchange {
         //         }
         //     )
         //
-        $feeGroupsById = $this->index_by($response, 'fee_group_id');
-        $feeGroupId = $this->safe_value($this->options, 'fee_group_id', 'default');
-        $feeGroup = $this->safe_value($feeGroupsById, $feeGroupId, array());
-        $feeTiers = $this->safe_value($feeGroup, 'fee_tiers');
+        $first = $this->safe_value($response, 0, array());
+        $feeTiers = $this->safe_value($first, 'fee_tiers');
+        $tiers = $this->parse_fee_tiers($feeTiers);
+        $firstTier = $this->safe_value($feeTiers, 0, array());
         $result = array();
         for ($i = 0; $i < count($this->symbols); $i++) {
             $symbol = $this->symbols[$i];
-            $fee = array(
-                'info' => $feeGroup,
+            $result[$symbol] = array(
+                'info' => $first,
                 'symbol' => $symbol,
-                'maker' => null,
-                'taker' => null,
+                'maker' => $this->safe_number($firstTier, 'maker_fee'),
+                'taker' => $this->safe_number($firstTier, 'taker_fee'),
                 'percentage' => true,
                 'tierBased' => true,
+                'tiers' => $tiers,
             );
-            $takerFees = array();
-            $makerFees = array();
-            for ($i = 0; $i < count($feeTiers); $i++) {
-                $tier = $feeTiers[$i];
-                $volume = $this->safe_number($tier, 'volume');
-                $taker = $this->safe_number($tier, 'taker_fee');
-                $maker = $this->safe_number($tier, 'maker_fee');
-                $taker /= 100;
-                $maker /= 100;
-                $takerFees[] = array( $volume, $taker );
-                $makerFees[] = array( $volume, $maker );
-                if ($i === 0) {
-                    $fee['taker'] = $taker;
-                    $fee['maker'] = $maker;
-                }
-            }
-            $tiers = array(
-                'taker' => $takerFees,
-                'maker' => $makerFees,
-            );
-            $fee['tiers'] = $tiers;
-            $result[$symbol] = $fee;
         }
         return $result;
     }
@@ -493,32 +492,45 @@ class bitpanda extends Exchange {
         //     }
         //
         $activeFeeTier = $this->safe_value($response, 'active_fee_tier', array());
-        $result = array(
-            'info' => $response,
-            'maker' => $this->safe_number($activeFeeTier, 'maker_fee'),
-            'taker' => $this->safe_number($activeFeeTier, 'taker_fee'),
-            'percentage' => true,
-            'tierBased' => true,
-        );
+        $makerFee = $this->safe_string($activeFeeTier, 'maker_fee');
+        $takerFee = $this->safe_string($activeFeeTier, 'taker_fee');
+        $makerFee = Precise::string_div($makerFee, '100');
+        $takerFee = Precise::string_div($takerFee, '100');
         $feeTiers = $this->safe_value($response, 'fee_tiers');
+        $result = array();
+        $tiers = $this->parse_fee_tiers($feeTiers);
+        for ($i = 0; $i < count($this->symbols); $i++) {
+            $symbol = $this->symbols[$i];
+            $result[$symbol] = array(
+                'info' => $response,
+                'symbol' => $symbol,
+                'maker' => $this->parse_number($makerFee),
+                'taker' => $this->parse_number($takerFee),
+                'percentage' => true,
+                'tierBased' => true,
+                'tiers' => $tiers,
+            );
+        }
+        return $result;
+    }
+
+    public function parse_fee_tiers($feeTiers, $market = null) {
         $takerFees = array();
         $makerFees = array();
         for ($i = 0; $i < count($feeTiers); $i++) {
             $tier = $feeTiers[$i];
             $volume = $this->safe_number($tier, 'volume');
-            $taker = $this->safe_number($tier, 'taker_fee');
-            $maker = $this->safe_number($tier, 'maker_fee');
-            $taker /= 100;
-            $maker /= 100;
-            $takerFees[] = array( $volume, $taker );
-            $makerFees[] = array( $volume, $maker );
+            $taker = $this->safe_string($tier, 'taker_fee');
+            $maker = $this->safe_string($tier, 'maker_fee');
+            $maker = Precise::string_div($maker, '100');
+            $taker = Precise::string_div($taker, '100');
+            $makerFees[] = array( $volume, $this->parse_number($maker) );
+            $takerFees[] = array( $volume, $this->parse_number($taker) );
         }
-        $tiers = array(
-            'taker' => $takerFees,
+        return array(
             'maker' => $makerFees,
+            'taker' => $takerFees,
         );
-        $result['tiers'] = $tiers;
-        return $result;
     }
 
     public function parse_ticker($ticker, $market = null) {
@@ -571,10 +583,16 @@ class bitpanda extends Exchange {
             'baseVolume' => $baseVolume,
             'quoteVolume' => $quoteVolume,
             'info' => $ticker,
-        ), $market, false);
+        ), $market);
     }
 
     public function fetch_ticker($symbol, $params = array ()) {
+        /**
+         * fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific $market
+         * @param {str} $symbol unified $symbol of the $market to fetch the ticker for
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {dict} a {@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure ticker structure}
+         */
         yield $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -603,6 +621,12 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_tickers($symbols = null, $params = array ()) {
+        /**
+         * fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+         * @param {[str]|null} $symbols unified $symbols of the markets to fetch the $ticker for, all market tickers are returned if not assigned
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {dict} an array of {@link https://docs.ccxt.com/en/latest/manual.html#$ticker-structure $ticker structures}
+         */
         yield $this->load_markets();
         $response = yield $this->publicGetMarketTicker ($params);
         //
@@ -635,6 +659,13 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {
+        /**
+         * fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} $symbol unified $symbol of the market to fetch the order book for
+         * @param {int|null} $limit the maximum amount of order book entries to return
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {dict} A dictionary of {@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure order book structures} indexed by market symbols
+         */
         yield $this->load_markets();
         $request = array(
             'instrument_code' => $this->market_id($symbol),
@@ -752,6 +783,15 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
+        /**
+         * fetches historical candlestick data containing the open, high, low, and close price, and the volume of a $market
+         * @param {str} $symbol unified $symbol of the $market to fetch OHLCV data for
+         * @param {str} $timeframe the length of time each candle represents
+         * @param {int|null} $since timestamp in ms of the earliest candle to fetch
+         * @param {int|null} $limit the maximum amount of candles to fetch
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         yield $this->load_markets();
         $market = $this->market($symbol);
         $periodUnit = $this->safe_string($this->timeframes, $timeframe);
@@ -870,6 +910,14 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
+        /**
+         * get the list of most recent trades for a particular $symbol
+         * @param {str} $symbol unified $symbol of the $market to fetch trades for
+         * @param {int|null} $since timestamp in ms of the earliest trade to fetch
+         * @param {int|null} $limit the maximum amount of trades to fetch
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {[dict]} a list of ~@link https://docs.ccxt.com/en/latest/manual.html?#public-trades trade structures~
+         */
         yield $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -917,6 +965,11 @@ class bitpanda extends Exchange {
     }
 
     public function fetch_balance($params = array ()) {
+        /**
+         * query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} $params extra parameters specific to the bitpanda api endpoint
+         * @return {dict} a ~@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure balance structure~
+         */
         yield $this->load_markets();
         $response = yield $this->privateGetAccountBalances ($params);
         //
@@ -1538,7 +1591,7 @@ class bitpanda extends Exchange {
         if ($since !== null) {
             $to = $this->safe_string($params, 'to');
             if ($to === null) {
-                throw new ArgumentsRequired($this->id . ' fetchOrders() requires a "to" iso8601 string param with the $since argument is specified, max range is 100 days');
+                throw new ArgumentsRequired($this->id . ' fetchOpenOrders() requires a "to" iso8601 string param with the $since argument is specified, max range is 100 days');
             }
             $request['from'] = $this->iso8601($since);
         }
@@ -1751,7 +1804,7 @@ class bitpanda extends Exchange {
             if ($query) {
                 $url .= '?' . $this->urlencode($query);
             }
-        } else if ($api === 'private') {
+        } elseif ($api === 'private') {
             $this->check_required_credentials();
             $headers = array(
                 'Accept' => 'application/json',

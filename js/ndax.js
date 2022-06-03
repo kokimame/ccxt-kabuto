@@ -5,7 +5,6 @@
 const Exchange = require ('./base/Exchange');
 const { ExchangeError, AuthenticationError, InsufficientFunds, BadSymbol, OrderNotFound } = require ('./base/errors');
 const { TICK_SIZE } = require ('./base/functions/number');
-const Precise = require ('./base/Precise');
 
 // ---------------------------------------------------------------------------
 
@@ -46,7 +45,6 @@ module.exports = class ndax extends Exchange {
                 'fetchFundingRateHistory': false,
                 'fetchFundingRates': false,
                 'fetchIndexOHLCV': false,
-                'fetchIsolatedPositions': false,
                 'fetchLedger': true,
                 'fetchLeverage': false,
                 'fetchLeverageTiers': false,
@@ -54,6 +52,7 @@ module.exports = class ndax extends Exchange {
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
                 'fetchOHLCV': true,
+                'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
@@ -65,12 +64,15 @@ module.exports = class ndax extends Exchange {
                 'fetchPremiumIndexOHLCV': false,
                 'fetchTicker': true,
                 'fetchTrades': true,
+                'fetchTradingFee': false,
+                'fetchTradingFees': false,
                 'fetchWithdrawals': true,
                 'reduceMargin': false,
                 'setLeverage': false,
                 'setMarginMode': false,
                 'setPositionMode': false,
                 'signIn': true,
+                'transfer': false,
                 'withdraw': true,
             },
             'timeframes': {
@@ -107,107 +109,107 @@ module.exports = class ndax extends Exchange {
             },
             'api': {
                 'public': {
-                    'get': [
-                        'Activate2FA',
-                        'Authenticate2FA',
-                        'AuthenticateUser',
-                        'GetL2Snapshot',
-                        'GetLevel1',
-                        'GetValidate2FARequiredEndpoints',
-                        'LogOut',
-                        'GetTickerHistory',
-                        'GetProduct',
-                        'GetProducts',
-                        'GetInstrument',
-                        'GetInstruments',
-                        'Ping',
-                        'trades', // undocumented
-                        'GetLastTrades', // undocumented
-                        'SubscribeLevel1',
-                        'SubscribeLevel2',
-                        'SubscribeTicker',
-                        'SubscribeTrades',
-                        'SubscribeBlockTrades',
-                        'UnsubscribeBlockTrades',
-                        'UnsubscribeLevel1',
-                        'UnsubscribeLevel2',
-                        'UnsubscribeTicker',
-                        'UnsubscribeTrades',
-                        'Authenticate', // undocumented
-                    ],
+                    'get': {
+                        'Activate2FA': 1,
+                        'Authenticate2FA': 1,
+                        'AuthenticateUser': 1,
+                        'GetL2Snapshot': 1,
+                        'GetLevel1': 1,
+                        'GetValidate2FARequiredEndpoints': 1,
+                        'LogOut': 1,
+                        'GetTickerHistory': 1,
+                        'GetProduct': 1,
+                        'GetProducts': 1,
+                        'GetInstrument': 1,
+                        'GetInstruments': 1,
+                        'Ping': 1,
+                        'trades': 1, // undocumented
+                        'GetLastTrades': 1, // undocumented
+                        'SubscribeLevel1': 1,
+                        'SubscribeLevel2': 1,
+                        'SubscribeTicker': 1,
+                        'SubscribeTrades': 1,
+                        'SubscribeBlockTrades': 1,
+                        'UnsubscribeBlockTrades': 1,
+                        'UnsubscribeLevel1': 1,
+                        'UnsubscribeLevel2': 1,
+                        'UnsubscribeTicker': 1,
+                        'UnsubscribeTrades': 1,
+                        'Authenticate': 1, // undocumented
+                    },
                 },
                 'private': {
-                    'get': [
-                        'GetUserAccountInfos',
-                        'GetUserAccounts',
-                        'GetUserAffiliateCount',
-                        'GetUserAffiliateTag',
-                        'GetUserConfig',
-                        'GetAllUnredactedUserConfigsForUser',
-                        'GetUnredactedUserConfigByKey',
-                        'GetUserDevices',
-                        'GetUserReportTickets',
-                        'GetUserReportWriterResultRecords',
-                        'GetAccountInfo',
-                        'GetAccountPositions',
-                        'GetAllAccountConfigs',
-                        'GetTreasuryProductsForAccount',
-                        'GetAccountTrades',
-                        'GetAccountTransactions',
-                        'GetOpenTradeReports',
-                        'GetAllOpenTradeReports',
-                        'GetTradesHistory',
-                        'GetOpenOrders',
-                        'GetOpenQuotes',
-                        'GetOrderFee',
-                        'GetOrderHistory',
-                        'GetOrdersHistory',
-                        'GetOrderStatus',
-                        'GetOmsFeeTiers',
-                        'GetAccountDepositTransactions',
-                        'GetAccountWithdrawTransactions',
-                        'GetAllDepositRequestInfoTemplates',
-                        'GetDepositInfo',
-                        'GetDepositRequestInfoTemplate',
-                        'GetDeposits',
-                        'GetDepositTicket',
-                        'GetDepositTickets',
-                        'GetOMSWithdrawFees',
-                        'GetWithdrawFee',
-                        'GetWithdraws',
-                        'GetWithdrawTemplate',
-                        'GetWithdrawTemplateTypes',
-                        'GetWithdrawTicket',
-                        'GetWithdrawTickets',
-                    ],
-                    'post': [
-                        'AddUserAffiliateTag',
-                        'CancelUserReport',
-                        'RegisterNewDevice',
-                        'SubscribeAccountEvents',
-                        'UpdateUserAffiliateTag',
-                        'GenerateTradeActivityReport',
-                        'GenerateTransactionActivityReport',
-                        'GenerateTreasuryActivityReport',
-                        'ScheduleTradeActivityReport',
-                        'ScheduleTransactionActivityReport',
-                        'ScheduleTreasuryActivityReport',
-                        'CancelAllOrders',
-                        'CancelOrder',
-                        'CancelQuote',
-                        'CancelReplaceOrder',
-                        'CreateQuote',
-                        'ModifyOrder',
-                        'SendOrder',
-                        'SubmitBlockTrade',
-                        'UpdateQuote',
-                        'CancelWithdraw',
-                        'CreateDepositTicket',
-                        'CreateWithdrawTicket',
-                        'SubmitDepositTicketComment',
-                        'SubmitWithdrawTicketComment',
-                        'GetOrderHistoryByOrderId',
-                    ],
+                    'get': {
+                        'GetUserAccountInfos': 1,
+                        'GetUserAccounts': 1,
+                        'GetUserAffiliateCount': 1,
+                        'GetUserAffiliateTag': 1,
+                        'GetUserConfig': 1,
+                        'GetAllUnredactedUserConfigsForUser': 1,
+                        'GetUnredactedUserConfigByKey': 1,
+                        'GetUserDevices': 1,
+                        'GetUserReportTickets': 1,
+                        'GetUserReportWriterResultRecords': 1,
+                        'GetAccountInfo': 1,
+                        'GetAccountPositions': 1,
+                        'GetAllAccountConfigs': 1,
+                        'GetTreasuryProductsForAccount': 1,
+                        'GetAccountTrades': 1,
+                        'GetAccountTransactions': 1,
+                        'GetOpenTradeReports': 1,
+                        'GetAllOpenTradeReports': 1,
+                        'GetTradesHistory': 1,
+                        'GetOpenOrders': 1,
+                        'GetOpenQuotes': 1,
+                        'GetOrderFee': 1,
+                        'GetOrderHistory': 1,
+                        'GetOrdersHistory': 1,
+                        'GetOrderStatus': 1,
+                        'GetOmsFeeTiers': 1,
+                        'GetAccountDepositTransactions': 1,
+                        'GetAccountWithdrawTransactions': 1,
+                        'GetAllDepositRequestInfoTemplates': 1,
+                        'GetDepositInfo': 1,
+                        'GetDepositRequestInfoTemplate': 1,
+                        'GetDeposits': 1,
+                        'GetDepositTicket': 1,
+                        'GetDepositTickets': 1,
+                        'GetOMSWithdrawFees': 1,
+                        'GetWithdrawFee': 1,
+                        'GetWithdraws': 1,
+                        'GetWithdrawTemplate': 1,
+                        'GetWithdrawTemplateTypes': 1,
+                        'GetWithdrawTicket': 1,
+                        'GetWithdrawTickets': 1,
+                    },
+                    'post': {
+                        'AddUserAffiliateTag': 1,
+                        'CancelUserReport': 1,
+                        'RegisterNewDevice': 1,
+                        'SubscribeAccountEvents': 1,
+                        'UpdateUserAffiliateTag': 1,
+                        'GenerateTradeActivityReport': 1,
+                        'GenerateTransactionActivityReport': 1,
+                        'GenerateTreasuryActivityReport': 1,
+                        'ScheduleTradeActivityReport': 1,
+                        'ScheduleTransactionActivityReport': 1,
+                        'ScheduleTreasuryActivityReport': 1,
+                        'CancelAllOrders': 1,
+                        'CancelOrder': 1,
+                        'CancelQuote': 1,
+                        'CancelReplaceOrder': 1,
+                        'CreateQuote': 1,
+                        'ModifyOrder': 1,
+                        'SendOrder': 1,
+                        'SubmitBlockTrade': 1,
+                        'UpdateQuote': 1,
+                        'CancelWithdraw': 1,
+                        'CreateDepositTicket': 1,
+                        'CreateWithdrawTicket': 1,
+                        'SubmitDepositTicketComment': 1,
+                        'SubmitWithdrawTicketComment': 1,
+                        'GetOrderHistoryByOrderId': 1,
+                    },
                 },
             },
             'fees': {
@@ -302,6 +304,13 @@ module.exports = class ndax extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchCurrencies
+         * @description fetches all available currencies on an exchange
+         * @param {dict} params extra parameters specific to the ndax api endpoint
+         * @returns {dict} an associative dictionary of currencies
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         const request = {
             'omsId': omsId,
@@ -360,6 +369,13 @@ module.exports = class ndax extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchMarkets
+         * @description retrieves data on all markets for ndax
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         const request = {
             'omsId': omsId,
@@ -513,6 +529,15 @@ module.exports = class ndax extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the ndax api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -585,24 +610,23 @@ module.exports = class ndax extends Exchange {
         const marketId = this.safeString (ticker, 'InstrumentId');
         market = this.safeMarket (marketId, market);
         const symbol = this.safeSymbol (marketId, market);
-        const last = this.safeNumber (ticker, 'LastTradedPx');
-        const percentage = this.safeNumber (ticker, 'Rolling24HrPxChangePercent');
-        const change = this.safeNumber (ticker, 'Rolling24HrPxChange');
-        const open = this.safeNumber (ticker, 'SessionOpen');
-        const baseVolume = this.safeNumber (ticker, 'Rolling24HrVolume');
-        const quoteVolume = this.safeNumber (ticker, 'Rolling24HrNotional');
-        const vwap = this.vwap (baseVolume, quoteVolume);
+        const last = this.safeString (ticker, 'LastTradedPx');
+        const percentage = this.safeString (ticker, 'Rolling24HrPxChangePercent');
+        const change = this.safeString (ticker, 'Rolling24HrPxChange');
+        const open = this.safeString (ticker, 'SessionOpen');
+        const baseVolume = this.safeString (ticker, 'Rolling24HrVolume');
+        const quoteVolume = this.safeString (ticker, 'Rolling24HrNotional');
         return this.safeTicker ({
             'symbol': symbol,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'high': this.safeNumber (ticker, 'SessionHigh'),
-            'low': this.safeNumber (ticker, 'SessionLow'),
-            'bid': this.safeNumber (ticker, 'BestBid'),
+            'high': this.safeString (ticker, 'SessionHigh'),
+            'low': this.safeString (ticker, 'SessionLow'),
+            'bid': this.safeString (ticker, 'BestBid'),
             'bidVolume': undefined, // this.safeNumber (ticker, 'BidQty'), always shows 0
-            'ask': this.safeNumber (ticker, 'BestOffer'),
+            'ask': this.safeString (ticker, 'BestOffer'),
             'askVolume': undefined, // this.safeNumber (ticker, 'AskQty'), always shows 0
-            'vwap': vwap,
+            'vwap': undefined,
             'open': open,
             'close': last,
             'last': last,
@@ -617,6 +641,14 @@ module.exports = class ndax extends Exchange {
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the ndax api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -683,6 +715,17 @@ module.exports = class ndax extends Exchange {
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {str} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {str} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {dict} params extra parameters specific to the ndax api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -828,7 +871,7 @@ module.exports = class ndax extends Exchange {
         //
         let priceString = undefined;
         let amountString = undefined;
-        let cost = undefined;
+        let costString = undefined;
         let timestamp = undefined;
         let id = undefined;
         let marketId = undefined;
@@ -853,27 +896,22 @@ module.exports = class ndax extends Exchange {
             marketId = this.safeString2 (trade, 'InstrumentId', 'Instrument');
             priceString = this.safeString (trade, 'Price');
             amountString = this.safeString (trade, 'Quantity');
-            cost = this.safeNumber2 (trade, 'Value', 'GrossValueExecuted');
+            costString = this.safeString2 (trade, 'Value', 'GrossValueExecuted');
             takerOrMaker = this.safeStringLower (trade, 'MakerTaker');
             side = this.safeStringLower (trade, 'Side');
             type = this.safeStringLower (trade, 'OrderType');
-            const feeCost = this.safeNumber (trade, 'Fee');
-            if (feeCost !== undefined) {
+            const feeCostString = this.safeString (trade, 'Fee');
+            if (feeCostString !== undefined) {
                 const feeCurrencyId = this.safeString (trade, 'FeeProductId');
                 const feeCurrencyCode = this.safeCurrencyCode (feeCurrencyId);
                 fee = {
-                    'cost': feeCost,
+                    'cost': feeCostString,
                     'currency': feeCurrencyCode,
                 };
             }
         }
-        const price = this.parseNumber (priceString);
-        const amount = this.parseNumber (amountString);
-        if (cost === undefined) {
-            cost = this.parseNumber (Precise.stringMul (priceString, amountString));
-        }
         const symbol = this.safeSymbol (marketId, market);
-        return {
+        return this.safeTrade ({
             'info': trade,
             'id': id,
             'symbol': symbol,
@@ -883,14 +921,24 @@ module.exports = class ndax extends Exchange {
             'type': type,
             'side': side,
             'takerOrMaker': takerOrMaker,
-            'price': price,
-            'amount': amount,
-            'cost': cost,
+            'price': priceString,
+            'amount': amountString,
+            'cost': costString,
             'fee': fee,
-        };
+        }, market);
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the ndax api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -961,6 +1009,13 @@ module.exports = class ndax extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name ndax#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the ndax api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         const omsId = this.safeInteger (this.options, 'omsId', 1);
         await this.loadMarkets ();
         await this.loadAccounts ();
@@ -2021,15 +2076,17 @@ module.exports = class ndax extends Exchange {
         //         "NotionalProductId": 0
         //     }
         //
-        const id = this.safeString (transaction, 'DepositId');
+        let id = undefined;
         let txid = undefined;
         const currencyId = this.safeString (transaction, 'ProductId');
         const code = this.safeCurrencyCode (currencyId, currency);
         let timestamp = undefined;
         let type = undefined;
         if ('DepositId' in transaction) {
+            id = this.safeString (transaction, 'DepositId');
             type = 'deposit';
         } else if ('WithdrawId' in transaction) {
+            id = this.safeString (transaction, 'WithdrawId');
             type = 'withdrawal';
         }
         const templateFormString = this.safeString (transaction, 'TemplateForm');
@@ -2153,10 +2210,7 @@ module.exports = class ndax extends Exchange {
             'Payload': this.json (withdrawPayload),
         };
         const response = await this.privatePostCreateWithdrawTicket (this.deepExtend (withdrawRequest, params));
-        return {
-            'info': response,
-            'id': this.safeString (response, 'Id'),
-        };
+        return this.parseTransaction (response, currency);
     }
 
     nonce () {

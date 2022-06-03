@@ -31,7 +31,7 @@ class bitvavo(Exchange):
             'id': 'bitvavo',
             'name': 'Bitvavo',
             'countries': ['NL'],  # Netherlands
-            'rateLimit': 60.1,  # 1000 requests per second
+            'rateLimit': 60,  # 1000 requests per minute
             'version': 'v2',
             'certified': True,
             'pro': True,
@@ -47,6 +47,9 @@ class bitvavo(Exchange):
                 'cancelOrder': True,
                 'createOrder': True,
                 'createReduceOnlyOrder': False,
+                'createStopLimitOrder': True,
+                'createStopMarketOrder': True,
+                'createStopOrder': True,
                 'editOrder': True,
                 'fetchBalance': True,
                 'fetchBorrowRate': False,
@@ -62,13 +65,13 @@ class bitvavo(Exchange):
                 'fetchFundingRateHistory': False,
                 'fetchFundingRates': False,
                 'fetchIndexOHLCV': False,
-                'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
                 'fetchLeverageTiers': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
                 'fetchOHLCV': True,
+                'fetchOpenInterestHistory': False,
                 'fetchOpenOrders': True,
                 'fetchOrder': True,
                 'fetchOrderBook': True,
@@ -81,11 +84,16 @@ class bitvavo(Exchange):
                 'fetchTickers': True,
                 'fetchTime': True,
                 'fetchTrades': True,
+                'fetchTradingFee': False,
+                'fetchTradingFees': True,
+                'fetchTransfer': False,
+                'fetchTransfers': False,
                 'fetchWithdrawals': True,
                 'reduceMargin': False,
                 'setLeverage': False,
                 'setMarginMode': False,
                 'setPositionMode': False,
+                'transfer': False,
                 'withdraw': True,
             },
             'timeframes': {
@@ -102,7 +110,7 @@ class bitvavo(Exchange):
                 '1d': '1d',
             },
             'urls': {
-                'logo': 'https://user-images.githubusercontent.com/1294454/83165440-2f1cf200-a116-11ea-9046-a255d09fb2ed.jpg',
+                'logo': 'https://user-images.githubusercontent.com/1294454/169202626-bd130fc5-fcf9-41bb-8d97-6093225c73cd.jpg',
                 'api': {
                     'public': 'https://api.bitvavo.com',
                     'private': 'https://api.bitvavo.com',
@@ -128,6 +136,7 @@ class bitvavo(Exchange):
                 },
                 'private': {
                     'get': {
+                        'account': 1,
                         'order': 1,
                         'orders': 5,
                         'ordersOpen': {'cost': 1, 'noMarket': 25},
@@ -159,25 +168,25 @@ class bitvavo(Exchange):
                     'tiers': {
                         'taker': [
                             [self.parse_number('0'), self.parse_number('0.0025')],
-                            [self.parse_number('50000'), self.parse_number('0.0024')],
-                            [self.parse_number('100000'), self.parse_number('0.0022')],
-                            [self.parse_number('250000'), self.parse_number('0.0020')],
-                            [self.parse_number('500000'), self.parse_number('0.0018')],
-                            [self.parse_number('1000000'), self.parse_number('0.0016')],
-                            [self.parse_number('2500000'), self.parse_number('0.0014')],
-                            [self.parse_number('5000000'), self.parse_number('0.0012')],
-                            [self.parse_number('10000000'), self.parse_number('0.0010')],
+                            [self.parse_number('100000'), self.parse_number('0.0020')],
+                            [self.parse_number('250000'), self.parse_number('0.0016')],
+                            [self.parse_number('500000'), self.parse_number('0.0012')],
+                            [self.parse_number('1000000'), self.parse_number('0.0010')],
+                            [self.parse_number('2500000'), self.parse_number('0.0008')],
+                            [self.parse_number('5000000'), self.parse_number('0.0006')],
+                            [self.parse_number('10000000'), self.parse_number('0.0005')],
+                            [self.parse_number('25000000'), self.parse_number('0.0004')],
                         ],
                         'maker': [
-                            [self.parse_number('0'), self.parse_number('0.0020')],
-                            [self.parse_number('50000'), self.parse_number('0.0015')],
+                            [self.parse_number('0'), self.parse_number('0.0015')],
                             [self.parse_number('100000'), self.parse_number('0.0010')],
-                            [self.parse_number('250000'), self.parse_number('0.0006')],
-                            [self.parse_number('500000'), self.parse_number('0.0003')],
-                            [self.parse_number('1000000'), self.parse_number('0.0001')],
-                            [self.parse_number('2500000'), self.parse_number('-0.0001')],
-                            [self.parse_number('5000000'), self.parse_number('-0.0003')],
-                            [self.parse_number('10000000'), self.parse_number('-0.0005')],
+                            [self.parse_number('250000'), self.parse_number('0.0008')],
+                            [self.parse_number('500000'), self.parse_number('0.0006')],
+                            [self.parse_number('1000000'), self.parse_number('0.0005')],
+                            [self.parse_number('2500000'), self.parse_number('0.0004')],
+                            [self.parse_number('5000000'), self.parse_number('0.0004')],
+                            [self.parse_number('10000000'), self.parse_number('0.0003')],
+                            [self.parse_number('25000000'), self.parse_number('0.0003')],
                         ],
                     },
                 },
@@ -271,8 +280,8 @@ class bitvavo(Exchange):
             },
         })
 
-    def currency_to_precision(self, currency, fee):
-        return self.decimal_to_precision(fee, 0, self.currencies[currency]['precision'])
+    def currency_to_precision(self, code, fee, networkCode=None):
+        return self.decimal_to_precision(fee, 0, self.currencies[code]['precision'])
 
     def amount_to_precision(self, symbol, amount):
         # https://docs.bitfinex.com/docs/introduction#amount-precision
@@ -289,6 +298,11 @@ class bitvavo(Exchange):
         return self.decimal_to_precision(price, TRUNCATE, 8, DECIMAL_PLACES)
 
     def fetch_time(self, params={}):
+        """
+        fetches the current integer timestamp in milliseconds from the exchange server
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns int: the current integer timestamp in milliseconds from the exchange server
+        """
         response = self.publicGetTime(params)
         #
         #     {"time": 1590379519148}
@@ -296,6 +310,11 @@ class bitvavo(Exchange):
         return self.safe_integer(response, 'time')
 
     def fetch_markets(self, params={}):
+        """
+        retrieves data on all markets for bitvavo
+        :param dict params: extra parameters specific to the exchange api endpoint
+        :returns [dict]: an array of objects representing market data
+        """
         response = self.publicGetMarkets(params)
         currencies = self.fetch_currencies_from_cache(params)
         currenciesById = self.index_by(currencies, 'symbol')
@@ -392,6 +411,11 @@ class bitvavo(Exchange):
         return self.safe_value(self.options['fetchCurrencies'], 'response')
 
     def fetch_currencies(self, params={}):
+        """
+        fetches all available currencies on an exchange
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns dict: an associative dictionary of currencies
+        """
         response = self.fetch_currencies_from_cache(params)
         #
         #     [
@@ -446,6 +470,12 @@ class bitvavo(Exchange):
         return result
 
     def fetch_ticker(self, symbol, params={}):
+        """
+        fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+        :param str symbol: unified symbol of the market to fetch the ticker for
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns dict: a `ticker structure <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -517,9 +547,15 @@ class bitvavo(Exchange):
             'baseVolume': baseVolume,
             'quoteVolume': quoteVolume,
             'info': ticker,
-        }, market, False)
+        }, market)
 
     def fetch_tickers(self, symbols=None, params={}):
+        """
+        fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+        :param [str]|None symbols: unified symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns dict: an array of `ticker structures <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         self.load_markets()
         response = self.publicGetTicker24h(params)
         #
@@ -543,6 +579,14 @@ class bitvavo(Exchange):
         return self.parse_tickers(response, symbols)
 
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        """
+        get the list of most recent trades for a particular symbol
+        :param str symbol: unified symbol of the market to fetch trades for
+        :param int|None since: timestamp in ms of the earliest trade to fetch
+        :param int|None limit: the maximum amount of trades to fetch
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns [dict]: a list of `trade structures <https://docs.ccxt.com/en/latest/manual.html?#public-trades>`
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -633,7 +677,7 @@ class bitvavo(Exchange):
         timestamp = self.safe_integer(trade, 'timestamp')
         side = self.safe_string(trade, 'side')
         id = self.safe_string_2(trade, 'id', 'fillId')
-        marketId = self.safe_integer(trade, 'market')
+        marketId = self.safe_string(trade, 'market')
         symbol = self.safe_symbol(marketId, market, '-')
         taker = self.safe_value(trade, 'taker')
         takerOrMaker = None
@@ -665,7 +709,42 @@ class bitvavo(Exchange):
             'fee': fee,
         }, market)
 
+    def fetch_trading_fees(self, params={}):
+        self.load_markets()
+        response = self.privateGetAccount(params)
+        #
+        #     {
+        #         "fees": {
+        #           "taker": "0.0025",
+        #           "maker": "0.0015",
+        #           "volume": "10000.00"
+        #         }
+        #     }
+        #
+        fees = self.safe_value(response, 'fees')
+        maker = self.safe_number(fees, 'maker')
+        taker = self.safe_number(fees, 'taker')
+        result = {}
+        for i in range(0, len(self.symbols)):
+            symbol = self.symbols[i]
+            result[symbol] = {
+                'info': response,
+                'symbol': symbol,
+                'maker': maker,
+                'taker': taker,
+                'percentage': True,
+                'tierBased': True,
+            }
+        return result
+
     def fetch_order_book(self, symbol, limit=None, params={}):
+        """
+        fetches information on open orders with bid(buy) and ask(sell) prices, volumes and other data
+        :param str symbol: unified symbol of the market to fetch the order book for
+        :param int|None limit: the maximum amount of order book entries to return
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns dict: A dictionary of `order book structures <https://docs.ccxt.com/en/latest/manual.html#order-book-structure>` indexed by market symbols
+        """
         self.load_markets()
         request = {
             'market': self.market_id(symbol),
@@ -714,6 +793,15 @@ class bitvavo(Exchange):
         ]
 
     def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        """
+        fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+        :param str symbol: unified symbol of the market to fetch OHLCV data for
+        :param str timeframe: the length of time each candle represents
+        :param int|None since: timestamp in ms of the earliest candle to fetch
+        :param int|None limit: the maximum amount of candles to fetch
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns [[int]]: A list of candles ordered as timestamp, open, high, low, close, volume
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -759,6 +847,11 @@ class bitvavo(Exchange):
         return self.safe_balance(result)
 
     def fetch_balance(self, params={}):
+        """
+        query for balance and get the amount of funds available for trading or funds locked in orders
+        :param dict params: extra parameters specific to the bitvavo api endpoint
+        :returns dict: a `balance structure <https://docs.ccxt.com/en/latest/manual.html?#balance-structure>`
+        """
         self.load_markets()
         response = self.privateGetBalance(params)
         #
@@ -833,10 +926,10 @@ class bitvavo(Exchange):
             stopPrice = self.safe_number_2(params, 'stopPrice', 'triggerAmount')
             if stopPrice is None:
                 if isStopLimit:
-                    raise ArgumentsRequired(self.id + ' createOrder requires a stopPrice parameter for a ' + type + ' order')
+                    raise ArgumentsRequired(self.id + ' createOrder() requires a stopPrice parameter for a ' + type + ' order')
                 elif isStopMarket:
                     if price is None:
-                        raise ArgumentsRequired(self.id + ' createOrder requires a price argument or a stopPrice parameter for a ' + type + ' order')
+                        raise ArgumentsRequired(self.id + ' createOrder() requires a price argument or a stopPrice parameter for a ' + type + ' order')
                     else:
                         stopPrice = price
             if isStopLimit:
@@ -1294,7 +1387,7 @@ class bitvavo(Exchange):
         #         }
         #     ]
         #
-        return self.parse_transactions(response, currency, since, limit)
+        return self.parse_transactions(response, currency, since, limit, {'type': 'withdrawal'})
 
     def fetch_deposits(self, code=None, since=None, limit=None, params={}):
         self.load_markets()
@@ -1325,7 +1418,7 @@ class bitvavo(Exchange):
         #         }
         #     ]
         #
-        return self.parse_transactions(response, currency, since, limit)
+        return self.parse_transactions(response, currency, since, limit, {'type': 'deposit'})
 
     def parse_transaction_status(self, status):
         statuses = {
@@ -1391,10 +1484,10 @@ class bitvavo(Exchange):
                 'currency': code,
             }
         type = None
-        if 'success' in transaction:
+        if ('success' in transaction) or ('address' in transaction):
             type = 'withdrawal'
         else:
-            type = 'deposit' if (status is None) else 'withdrawal'
+            type = 'deposit'
         tag = self.safe_string(transaction, 'paymentId')
         return {
             'info': transaction,

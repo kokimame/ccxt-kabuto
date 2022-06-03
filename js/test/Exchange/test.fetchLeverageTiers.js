@@ -1,6 +1,8 @@
 'use strict';
 
-const assert = require ('assert');
+const assert = require ('assert')
+    , testLeverageTier = require ('./test.leverageTier.js')
+
 
 module.exports = async (exchange, symbol) => {
     const method = 'fetchLeverageTiers';
@@ -10,7 +12,7 @@ module.exports = async (exchange, symbol) => {
     //     ],
     // };
     if (exchange.has[method]) {
-        const tiers = await exchange [method] (symbol);
+        const tiers = await exchange [method] ([ symbol ]);
         const tierKeys = Object.keys (tiers);
         const numTierKeys = tierKeys.length;
         assert (numTierKeys >= 1);
@@ -21,11 +23,11 @@ module.exports = async (exchange, symbol) => {
             assert (arrayLength >= 1);
             for (let j=0; j < tiersForSymbol.length; j++) {
                 const tier = tiersForSymbol[j];
-                testLeverageTier (exchange, tier, method);
+                testLeverageTier (exchange, method, tier);
             }
         }
         return tiers;
     } else {
-        console.log (method + ' not supported');
+        console.log (method + '() is not supported');
     }
 }

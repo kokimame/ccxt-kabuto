@@ -37,12 +37,12 @@ module.exports = class independentreserve extends Exchange {
                 'fetchFundingRateHistory': false,
                 'fetchFundingRates': false,
                 'fetchIndexOHLCV': false,
-                'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
                 'fetchLeverageTiers': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
+                'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
@@ -52,6 +52,8 @@ module.exports = class independentreserve extends Exchange {
                 'fetchPremiumIndexOHLCV': false,
                 'fetchTicker': true,
                 'fetchTrades': true,
+                'fetchTradingFee': false,
+                'fetchTradingFees': true,
                 'reduceMargin': false,
                 'setLeverage': false,
                 'setMarginMode': false,
@@ -124,6 +126,13 @@ module.exports = class independentreserve extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name independentreserve#fetchMarkets
+         * @description retrieves data on all markets for independentreserve
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         const baseCurrencies = await this.publicGetGetValidPrimaryCurrencyCodes (params);
         const quoteCurrencies = await this.publicGetGetValidSecondaryCurrencyCodes (params);
         const limits = await this.publicGetGetOrderMinimumVolumes (params);
@@ -211,12 +220,28 @@ module.exports = class independentreserve extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name independentreserve#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the independentreserve api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privatePostGetAccounts (params);
         return this.parseBalance (response);
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name independentreserve#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the independentreserve api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -273,10 +298,18 @@ module.exports = class independentreserve extends Exchange {
             'baseVolume': this.safeString (ticker, 'DayVolumeXbtInSecondaryCurrrency'),
             'quoteVolume': undefined,
             'info': ticker,
-        }, market, false);
+        }, market);
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name independentreserve#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the independentreserve api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -351,15 +384,17 @@ module.exports = class independentreserve extends Exchange {
         }
         let orderType = this.safeString2 (order, 'Type', 'OrderType');
         let side = undefined;
-        if (orderType.indexOf ('Bid') >= 0) {
-            side = 'buy';
-        } else if (orderType.indexOf ('Offer') >= 0) {
-            side = 'sell';
-        }
-        if (orderType.indexOf ('Market') >= 0) {
-            orderType = 'market';
-        } else if (orderType.indexOf ('Limit') >= 0) {
-            orderType = 'limit';
+        if (orderType !== undefined) {
+            if (orderType.indexOf ('Bid') >= 0) {
+                side = 'buy';
+            } else if (orderType.indexOf ('Offer') >= 0) {
+                side = 'sell';
+            }
+            if (orderType.indexOf ('Market') >= 0) {
+                orderType = 'market';
+            } else if (orderType.indexOf ('Limit') >= 0) {
+                orderType = 'limit';
+            }
         }
         const timestamp = this.parse8601 (this.safeString (order, 'CreatedTimestampUtc'));
         const amount = this.safeString2 (order, 'VolumeOrdered', 'Volume');
@@ -528,6 +563,16 @@ module.exports = class independentreserve extends Exchange {
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name independentreserve#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the independentreserve api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -537,6 +582,46 @@ module.exports = class independentreserve extends Exchange {
         };
         const response = await this.publicGetGetRecentTrades (this.extend (request, params));
         return this.parseTrades (response['Trades'], market, since, limit);
+    }
+
+    async fetchTradingFees (params = {}) {
+        await this.loadMarkets ();
+        const response = await this.privatePostGetBrokerageFees (params);
+        //
+        //     [
+        //         {
+        //             "CurrencyCode": "Xbt",
+        //             "Fee": 0.005
+        //         }
+        //         ...
+        //     ]
+        //
+        const fees = {};
+        for (let i = 0; i < response.length; i++) {
+            const fee = response[i];
+            const currencyId = this.safeString (fee, 'CurrencyCode');
+            const code = this.safeCurrencyCode (currencyId);
+            const tradingFee = this.safeNumber (fee, 'Fee');
+            fees[code] = {
+                'info': fee,
+                'fee': tradingFee,
+            };
+        }
+        const result = {};
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            const market = this.market (symbol);
+            const fee = this.safeValue (fees, market['base'], {});
+            result[symbol] = {
+                'info': this.safeValue (fee, 'info'),
+                'symbol': symbol,
+                'maker': this.safeNumber (fee, 'fee'),
+                'taker': this.safeNumber (fee, 'fee'),
+                'percentage': true,
+                'tierBased': true,
+            };
+        }
+        return result;
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {

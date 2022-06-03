@@ -2,7 +2,7 @@
 
 //  ---------------------------------------------------------------------------
 const Exchange = require ('./base/Exchange');
-const { ExchangeError, AuthenticationError, OrderNotFound, InsufficientFunds } = require ('./base/errors');
+const { ExchangeError, AuthenticationError, OrderNotFound, InsufficientFunds, ArgumentsRequired } = require ('./base/errors');
 const { TICK_SIZE } = require ('./base/functions/number');
 const Precise = require ('./base/Precise');
 
@@ -15,7 +15,7 @@ module.exports = class blockchaincom extends Exchange {
             'secret': undefined,
             'name': 'Blockchain.com',
             'countries': [ 'LX' ],
-            'rateLimit': 1000,
+            'rateLimit': 500, // prev 1000
             'version': 'v3',
             'has': {
                 'CORS': false,
@@ -27,6 +27,9 @@ module.exports = class blockchaincom extends Exchange {
                 'cancelOrder': true,
                 'cancelOrders': true,
                 'createOrder': true,
+                'createStopLimitOrder': true,
+                'createStopMarketOrder': true,
+                'createStopOrder': true,
                 'fetchBalance': true,
                 'fetchCanceledOrders': true,
                 'fetchClosedOrders': true,
@@ -45,6 +48,7 @@ module.exports = class blockchaincom extends Exchange {
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
                 'fetchOHLCV': false,
+                'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
@@ -52,10 +56,14 @@ module.exports = class blockchaincom extends Exchange {
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'fetchTrades': false,
+                'fetchTradingFee': false,
                 'fetchTradingFees': true,
+                'fetchTransfer': false,
+                'fetchTransfers': false,
                 'fetchWithdrawal': true,
                 'fetchWithdrawals': true,
                 'fetchWithdrawalWhitelist': true, // fetches exchange specific benficiary-ids needed for withdrawals
+                'transfer': false,
                 'withdraw': true,
             },
             'timeframes': undefined,
@@ -77,40 +85,40 @@ module.exports = class blockchaincom extends Exchange {
             },
             'api': {
                 'public': {
-                    'get': [
-                        'tickers', // fetchTickers
-                        'tickers/{symbol}', // fetchTicker
-                        'symbols', // fetchMarkets
-                        'symbols/{symbol}', // fetchMarket
-                        'l2/{symbol}', // fetchL2OrderBook
-                        'l3/{symbol}', // fetchL3OrderBook
-                    ],
+                    'get': {
+                        'tickers': 1, // fetchTickers
+                        'tickers/{symbol}': 1, // fetchTicker
+                        'symbols': 1, // fetchMarkets
+                        'symbols/{symbol}': 1, // fetchMarket
+                        'l2/{symbol}': 1, // fetchL2OrderBook
+                        'l3/{symbol}': 1, // fetchL3OrderBook
+                    },
                 },
                 'private': {
-                    'get': [
-                        'fees', // fetchFees
-                        'orders', // fetchOpenOrders, fetchClosedOrders
-                        'orders/{orderId}', // fetchOrder(id)
-                        'trades',
-                        'fills', // fetchMyTrades
-                        'deposits', // fetchDeposits
-                        'deposits/{depositId}', // fetchDeposit
-                        'accounts', // fetchBalance
-                        'accounts/{account}/{currency}',
-                        'whitelist', // fetchWithdrawalWhitelist
-                        'whitelist/{currency}', // fetchWithdrawalWhitelistByCurrency
-                        'withdrawals', // fetchWithdrawalWhitelist
-                        'withdrawals/{withdrawalId}', // fetchWithdrawalById
-                    ],
-                    'post': [
-                        'orders', // createOrder
-                        'deposits/{currency}', // fetchDepositAddress by currency (only crypto supported)
-                        'withdrawals', // withdraw
-                    ],
-                    'delete': [
-                        'orders', // cancelOrders
-                        'orders/{orderId}', // cancelOrder
-                    ],
+                    'get': {
+                        'fees': 1, // fetchFees
+                        'orders': 1, // fetchOpenOrders, fetchClosedOrders
+                        'orders/{orderId}': 1, // fetchOrder(id)
+                        'trades': 1,
+                        'fills': 1, // fetchMyTrades
+                        'deposits': 1, // fetchDeposits
+                        'deposits/{depositId}': 1, // fetchDeposit
+                        'accounts': 1, // fetchBalance
+                        'accounts/{account}/{currency}': 1,
+                        'whitelist': 1, // fetchWithdrawalWhitelist
+                        'whitelist/{currency}': 1, // fetchWithdrawalWhitelistByCurrency
+                        'withdrawals': 1, // fetchWithdrawalWhitelist
+                        'withdrawals/{withdrawalId}': 1, // fetchWithdrawalById
+                    },
+                    'post': {
+                        'orders': 1, // createOrder
+                        'deposits/{currency}': 1, // fetchDepositAddress by currency (only crypto supported)
+                        'withdrawals': 1, // withdraw
+                    },
+                    'delete': {
+                        'orders': 1, // cancelOrders
+                        'orders/{orderId}': 1, // cancelOrder
+                    },
                 },
             },
             'fees': {
@@ -166,6 +174,13 @@ module.exports = class blockchaincom extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name blockchaincom#fetchMarkets
+         * @description retrieves data on all markets for blockchaincom
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         //
         //     "USDC-GBP": {
         //         "base_currency": "USDC",
@@ -202,9 +217,9 @@ module.exports = class blockchaincom extends Exchange {
             let active = undefined;
             const marketState = this.safeString (market, 'status');
             if (marketState === 'open') {
-                active = 'true';
+                active = true;
             } else {
-                active = 'false';
+                active = false;
             }
             // price precision
             const minPriceIncrementString = this.safeString (market, 'min_price_increment');
@@ -289,6 +304,15 @@ module.exports = class blockchaincom extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name blockchaincom#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the blockchaincom api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         return await this.fetchL3OrderBook (symbol, limit, params);
     }
 
@@ -351,10 +375,18 @@ module.exports = class blockchaincom extends Exchange {
             'baseVolume': baseVolume,
             'quoteVolume': undefined,
             'info': ticker,
-        }, market, false);
+        }, market);
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name blockchaincom#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the blockchaincom api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -365,6 +397,14 @@ module.exports = class blockchaincom extends Exchange {
     }
 
     async fetchTickers (symbols = undefined, params = {}) {
+        /**
+         * @method
+         * @name blockchaincom#fetchTickers
+         * @description fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+         * @param {[str]|undefined} symbols unified symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+         * @param {dict} params extra parameters specific to the blockchaincom api endpoint
+         * @returns {dict} an array of [ticker structures]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const tickers = await this.publicGetTickers (params);
         return this.parseTickers (tickers, symbols);
@@ -440,27 +480,50 @@ module.exports = class blockchaincom extends Exchange {
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {
-        const clientOrderId = this.safeString2 (params, 'clientOrderId', 'clOrdId', this.uuid16 ());
         await this.loadMarkets ();
         const market = this.market (symbol);
+        const orderType = this.safeString (params, 'ordType', type);
+        const uppercaseOrderType = orderType.toUpperCase ();
+        const clientOrderId = this.safeString2 (params, 'clientOrderId', 'clOrdId', this.uuid16 ());
+        params = this.omit (params, [ 'ordType', 'clientOrderId', 'clOrdId' ]);
         const request = {
             // 'stopPx' : limit price
             // 'timeInForce' : "GTC" for Good Till Cancel, "IOC" for Immediate or Cancel, "FOK" for Fill or Kill, "GTD" Good Till Date
             // 'expireDate' : expiry date in the format YYYYMMDD
             // 'minQty' : The minimum quantity required for an IOC fill
+            'ordType': uppercaseOrderType,
             'symbol': market['id'],
             'side': side.toUpperCase (),
             'orderQty': this.amountToPrecision (symbol, amount),
-            'ordType': type.toUpperCase (), // LIMIT, MARKET, STOP, STOPLIMIT
             'clOrdId': clientOrderId,
         };
-        params = this.omit (params, [ 'clientOrderId', 'clOrdId' ]);
-        if (request['ordType'] === 'LIMIT') {
+        const stopPrice = this.safeValue2 (params, 'stopPx', 'stopPrice');
+        params = this.omit (params, [ 'stopPx', 'stopPrice' ]);
+        if (uppercaseOrderType === 'STOP' || uppercaseOrderType === 'STOPLIMIT') {
+            if (stopPrice === undefined) {
+                throw new ArgumentsRequired (this.id + ' createOrder() requires a stopPx or stopPrice param for a ' + uppercaseOrderType + ' order');
+            }
+        }
+        if (stopPrice !== undefined) {
+            if (uppercaseOrderType === 'MARKET') {
+                request['ordType'] = 'STOP';
+            } else if (uppercaseOrderType === 'LIMIT') {
+                request['ordType'] = 'STOPLIMIT';
+            }
+        }
+        let priceRequired = false;
+        let stopPriceRequired = false;
+        if (request['ordType'] === 'LIMIT' || request['ordType'] === 'STOPLIMIT') {
+            priceRequired = true;
+        }
+        if (request['ordType'] === 'STOP' || request['ordType'] === 'STOPLIMIT') {
+            stopPriceRequired = true;
+        }
+        if (priceRequired) {
             request['price'] = this.priceToPrecision (symbol, price);
         }
-        if (request['ordType'] === 'STOPLIMIT') {
-            request['price'] = this.priceToPrecision (symbol, price);
-            request['stopPx'] = this.priceToPrecision (symbol, price);
+        if (stopPriceRequired) {
+            request['stopPx'] = this.priceToPrecision (symbol, stopPrice);
         }
         const response = await this.privatePostOrders (this.extend (request, params));
         return this.parseOrder (response, market);
@@ -496,6 +559,8 @@ module.exports = class blockchaincom extends Exchange {
     }
 
     async fetchTradingFees (params = {}) {
+        await this.loadMarkets ();
+        const response = await this.privateGetFees (params);
         //
         //     {
         //         makerRate: "0.002",
@@ -503,13 +568,19 @@ module.exports = class blockchaincom extends Exchange {
         //         volumeInUSD: "0.0"
         //     }
         //
-        await this.loadMarkets ();
-        const response = await this.privateGetFees ();
-        return {
-            'maker': this.safeNumber (response, 'makerRate'),
-            'taker': this.safeNumber (response, 'takerRate'),
-            'info': response,
-        };
+        const makerFee = this.safeNumber (response, 'makerRate');
+        const takerFee = this.safeNumber (response, 'takerRate');
+        const result = {};
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            result[symbol] = {
+                'info': response,
+                'symbol': symbol,
+                'maker': makerFee,
+                'taker': takerFee,
+            };
+        }
+        return result;
     }
 
     async fetchCanceledOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
@@ -558,50 +629,37 @@ module.exports = class blockchaincom extends Exchange {
         //         "timestamp":1634559249687
         //     }
         //
-        const id = this.safeString (trade, 'exOrdId');
-        const order = this.safeString (trade, 'tradeId');
+        const orderId = this.safeString (trade, 'exOrdId');
+        const tradeId = this.safeString (trade, 'tradeId');
         const side = this.safeString (trade, 'side').toLowerCase ();
         const marketId = this.safeString (trade, 'symbol');
         const priceString = this.safeString (trade, 'price');
         const amountString = this.safeString (trade, 'qty');
-        const costString = Precise.stringMul (priceString, amountString);
-        const price = this.parseNumber (priceString);
-        const amount = this.parseNumber (amountString);
-        const cost = this.parseNumber (costString);
         const timestamp = this.safeInteger (trade, 'timestamp');
         const datetime = this.iso8601 (timestamp);
         market = this.safeMarket (marketId, market, '-');
         const symbol = market['symbol'];
         let fee = undefined;
-        const feeCost = this.safeNumber (trade, 'fee');
-        if (feeCost !== undefined) {
-            let feeCurrency = undefined;
-            if (market !== undefined) {
-                if (side === 'buy') {
-                    const base = market['base'];
-                    feeCurrency = this.safeCurrencyCode (base);
-                } else if (side === 'sell') {
-                    const quote = market['quote'];
-                    feeCurrency = this.safeCurrencyCode (quote);
-                }
-            }
-            fee = { 'cost': feeCost, 'currency': feeCurrency };
+        const feeCostString = this.safeString (trade, 'fee');
+        if (feeCostString !== undefined) {
+            const feeCurrency = market['quote'];
+            fee = { 'cost': feeCostString, 'currency': feeCurrency };
         }
-        return {
-            'id': id,
+        return this.safeTrade ({
+            'id': tradeId,
             'timestamp': timestamp,
             'datetime': datetime,
             'symbol': symbol,
-            'order': order,
+            'order': orderId,
             'type': undefined,
             'side': side,
             'takerOrMaker': undefined,
-            'price': price,
-            'amount': amount,
-            'cost': cost,
+            'price': priceString,
+            'amount': amountString,
+            'cost': undefined,
             'fee': fee,
-            'info': order,
-        };
+            'info': trade,
+        }, market);
     }
 
     async fetchMyTrades (symbol = undefined, since = undefined, limit = undefined, params = {}) {
@@ -761,10 +819,10 @@ module.exports = class blockchaincom extends Exchange {
 
     async withdraw (code, amount, address, tag = undefined, params = {}) {
         await this.loadMarkets ();
-        const currencyid = this.currencyId (code);
+        const currency = this.currency (code);
         const request = {
             'amount': amount,
-            'currency': currencyid,
+            'currency': currency['id'],
             // 'beneficiary': address/id,
             'sendMax': false,
         };
@@ -780,12 +838,7 @@ module.exports = class blockchaincom extends Exchange {
         //         timestamp: "1634218452595"
         //     },
         //
-        const withdrawalId = this.safeString (response, 'withdrawalId');
-        const result = {
-            'info': response,
-            'id': withdrawalId,
-        };
-        return result;
+        return this.parseTransaction (response, currency);
     }
 
     async fetchWithdrawals (code = undefined, since = undefined, limit = undefined, params = {}) {
@@ -834,6 +887,13 @@ module.exports = class blockchaincom extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name blockchaincom#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the blockchaincom api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         await this.loadMarkets ();
         const accountName = this.safeString (params, 'account', 'primary');
         params = this.omit (params, 'account');

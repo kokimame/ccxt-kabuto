@@ -37,10 +37,10 @@ module.exports = class coincheck extends Exchange {
                 'fetchFundingRateHistory': false,
                 'fetchFundingRates': false,
                 'fetchIndexOHLCV': false,
-                'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
+                'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrderBook': true,
                 'fetchPosition': false,
@@ -49,6 +49,8 @@ module.exports = class coincheck extends Exchange {
                 'fetchPremiumIndexOHLCV': false,
                 'fetchTicker': true,
                 'fetchTrades': true,
+                'fetchTradingFee': false,
+                'fetchTradingFees': true,
                 'fetchWithdrawals': true,
                 'reduceMargin': false,
                 'setLeverage': false,
@@ -172,6 +174,13 @@ module.exports = class coincheck extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name coincheck#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the coincheck api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privateGetAccountsBalance (params);
         return this.parseBalance (response);
@@ -244,6 +253,15 @@ module.exports = class coincheck extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name coincheck#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the coincheck api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -289,12 +307,20 @@ module.exports = class coincheck extends Exchange {
             'baseVolume': this.safeString (ticker, 'volume'),
             'quoteVolume': undefined,
             'info': ticker,
-        }, market, false);
+        }, market);
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name coincheck#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the coincheck api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         if (symbol !== 'BTC/JPY') {
-            throw new BadSymbol (this.id + ' fetchTicker () supports BTC/JPY only');
+            throw new BadSymbol (this.id + ' fetchTicker() supports BTC/JPY only');
         }
         await this.loadMarkets ();
         const market = this.market (symbol);
@@ -371,9 +397,7 @@ module.exports = class coincheck extends Exchange {
             }
         }
         if (symbol === undefined) {
-            if (market !== undefined) {
-                symbol = market['symbol'];
-            }
+            symbol = this.safeSymbol (undefined, market);
         }
         let takerOrMaker = undefined;
         let amountString = undefined;
@@ -452,6 +476,16 @@ module.exports = class coincheck extends Exchange {
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name coincheck#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the coincheck api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -473,6 +507,46 @@ module.exports = class coincheck extends Exchange {
         //
         const data = this.safeValue (response, 'data', []);
         return this.parseTrades (data, market, since, limit);
+    }
+
+    async fetchTradingFees (params = {}) {
+        await this.loadMarkets ();
+        const response = await this.privateGetAccounts (params);
+        //
+        //     {
+        //         success: true,
+        //         id: '7487995',
+        //         email: 'some@email.com',
+        //         identity_status: 'identity_pending',
+        //         bitcoin_address: null,
+        //         lending_leverage: '4',
+        //         taker_fee: '0.0',
+        //         maker_fee: '0.0',
+        //         exchange_fees: {
+        //           btc_jpy: { taker_fee: '0.0', maker_fee: '0.0' },
+        //           etc_jpy: { taker_fee: '0.0', maker_fee: '0.0' },
+        //           fct_jpy: { taker_fee: '0.0', maker_fee: '0.0' },
+        //           mona_jpy: { taker_fee: '0.0', maker_fee: '0.0' },
+        //           plt_jpy: { taker_fee: '0.0', maker_fee: '0.0' }
+        //         }
+        //     }
+        //
+        const fees = this.safeValue (response, 'exchange_fees', {});
+        const result = {};
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            const market = this.market (symbol);
+            const fee = this.safeValue (fees, market['id'], {});
+            result[symbol] = {
+                'info': fee,
+                'symbol': symbol,
+                'maker': this.safeNumber (fee, 'maker_fee'),
+                'taker': this.safeNumber (fee, 'taker_fee'),
+                'percentage': true,
+                'tierBased': false,
+            };
+        }
+        return result;
     }
 
     async createOrder (symbol, type, side, amount, price = undefined, params = {}) {

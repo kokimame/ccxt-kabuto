@@ -28,6 +28,9 @@ class eqonex(Exchange):
                 'option': False,
                 'cancelOrder': True,
                 'createOrder': True,
+                'createStopLimitOrder': True,
+                'createStopMarketOrder': True,
+                'createStopOrder': True,
                 'editOrder': True,
                 'fetchBalance': True,
                 'fetchBorrowRate': False,
@@ -48,6 +51,7 @@ class eqonex(Exchange):
                 'fetchOrders': True,
                 'fetchTicker': None,
                 'fetchTrades': True,
+                'fetchTradingFee': False,
                 'fetchTradingFees': True,
                 'fetchTradingLimits': True,
                 'fetchWithdrawals': True,
@@ -129,6 +133,11 @@ class eqonex(Exchange):
         })
 
     def fetch_markets(self, params={}):
+        """
+        retrieves data on all markets for eqonex
+        :param dict params: extra parameters specific to the exchange api endpoint
+        :returns [dict]: an array of objects representing market data
+        """
         request = {
             'verbose': True,
         }
@@ -317,6 +326,11 @@ class eqonex(Exchange):
         }
 
     def fetch_currencies(self, params={}):
+        """
+        fetches all available currencies on an exchange
+        :param dict params: extra parameters specific to the eqonex api endpoint
+        :returns dict: an associative dictionary of currencies
+        """
         response = self.publicGetGetInstruments(params)
         #
         #     {
@@ -389,6 +403,15 @@ class eqonex(Exchange):
         }
 
     def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        """
+        fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+        :param str symbol: unified symbol of the market to fetch OHLCV data for
+        :param str timeframe: the length of time each candle represents
+        :param int|None since: timestamp in ms of the earliest candle to fetch
+        :param int|None limit: the maximum amount of candles to fetch
+        :param dict params: extra parameters specific to the eqonex api endpoint
+        :returns [[int]]: A list of candles ordered as timestamp, open, high, low, close, volume
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -470,6 +493,13 @@ class eqonex(Exchange):
         return result
 
     def fetch_order_book(self, symbol, limit=None, params={}):
+        """
+        fetches information on open orders with bid(buy) and ask(sell) prices, volumes and other data
+        :param str symbol: unified symbol of the market to fetch the order book for
+        :param int|None limit: the maximum amount of order book entries to return
+        :param dict params: extra parameters specific to the eqonex api endpoint
+        :returns dict: A dictionary of `order book structures <https://docs.ccxt.com/en/latest/manual.html#order-book-structure>` indexed by market symbols
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -499,6 +529,14 @@ class eqonex(Exchange):
         return self.parse_order_book(response, symbol, None, 'bids', 'asks', 0, 1, market)
 
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        """
+        get the list of most recent trades for a particular symbol
+        :param str symbol: unified symbol of the market to fetch trades for
+        :param int|None since: timestamp in ms of the earliest trade to fetch
+        :param int|None limit: the maximum amount of trades to fetch
+        :param dict params: extra parameters specific to the eqonex api endpoint
+        :returns [dict]: a list of `trade structures <https://docs.ccxt.com/en/latest/manual.html?#public-trades>`
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -564,7 +602,7 @@ class eqonex(Exchange):
         priceString = None
         amountString = None
         fee = None
-        symbol = None
+        marketId = None
         if isinstance(trade, list):
             id = self.safe_string(trade, 3)
             priceString = self.convert_from_scale(self.safe_string(trade, 0), market['precision']['price'])
@@ -579,7 +617,6 @@ class eqonex(Exchange):
             id = self.safe_string(trade, 'execId')
             timestamp = self.safe_integer(trade, 'time')
             marketId = self.safe_string(trade, 'symbol')
-            symbol = self.safe_symbol(marketId, market)
             orderId = self.safe_string(trade, 'orderId')
             side = self.safe_string_lower(trade, 'side')
             type = self.parse_order_type(self.safe_string(trade, 'ordType'))
@@ -594,14 +631,13 @@ class eqonex(Exchange):
                     'cost': feeCostString,
                     'currency': feeCurrencyCode,
                 }
-        if (symbol is None) and (market is not None):
-            symbol = market['symbol']
+        market = self.safe_market(marketId, market)
         return self.safe_trade({
             'info': trade,
             'id': id,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'order': orderId,
             'type': type,
             'side': side,
@@ -633,6 +669,11 @@ class eqonex(Exchange):
         return self.safe_balance(result)
 
     def fetch_balance(self, params={}):
+        """
+        query for balance and get the amount of funds available for trading or funds locked in orders
+        :param dict params: extra parameters specific to the eqonex api endpoint
+        :returns dict: a `balance structure <https://docs.ccxt.com/en/latest/manual.html?#balance-structure>`
+        """
         self.load_markets()
         response = self.privatePostGetPositions(params)
         #     {
@@ -1210,22 +1251,74 @@ class eqonex(Exchange):
         return self.parse_transaction(response, currency)
 
     def fetch_trading_fees(self, params={}):
-        # getExchangeInfo
+        self.load_markets()
         response = self.publicGetGetExchangeInfo(params)
-        tradingFees = self.safe_value(response, 'spotFees', [])
-        taker = {}
-        maker = {}
-        for i in range(0, len(tradingFees)):
-            tradingFee = tradingFees[i]
-            if self.safe_string(tradingFee, 'tier') is not None:
-                taker[tradingFee['tier']] = self.safe_number(tradingFee, 'taker')
-                maker[tradingFee['tier']] = self.safe_number(tradingFee, 'maker')
-        return {
-            'info': tradingFees,
-            'tierBased': True,
-            'maker': maker,
-            'taker': taker,
+        #
+        #     {
+        #         tradingLimits: [],
+        #         withdrawLimits: [{All: '0.0', Type: 'percent'}],
+        #         futuresFees: [
+        #             {tier: '0', maker: '0.000300', taker: '0.000500'},
+        #             {tier: '1', maker: '0.000200', taker: '0.000400'},
+        #             {tier: '2', maker: '0.000180', taker: '0.000400'},
+        #         ],
+        #         spotFees: [
+        #             {tier: '0', maker: '0.000900', taker: '0.001500', volume: '0'},
+        #             {tier: '1', maker: '0.000600', taker: '0.001250', volume: '200000'},
+        #             {tier: '2', maker: '0.000540', taker: '0.001200', volume: '2500000'},
+        #         ],
+        #         referrals: {earning: '0.30', discount: '0.05', duration: '180'}
+        #     }
+        #
+        spotFees = self.safe_value(response, 'spotFees', [])
+        firstSpotFee = self.safe_value(spotFees, 0, {})
+        spotMakerFee = self.safe_number(firstSpotFee, 'maker')
+        spotTakerFee = self.safe_number(firstSpotFee, 'taker')
+        futureFees = self.safe_value(response, 'futuresFees', [])
+        firstFutureFee = self.safe_value(futureFees, 0, {})
+        futureMakerFee = self.safe_number(firstFutureFee, 'maker')
+        futureTakerFee = self.safe_number(firstFutureFee, 'taker')
+        spotTakerTiers = []
+        spotMakerTiers = []
+        result = {}
+        for i in range(0, len(spotFees)):
+            spotFee = spotFees[i]
+            volume = self.safe_number(spotFee, 'volume')
+            spotTakerTiers.append([volume, self.safe_number(spotFee, 'taker')])
+            spotMakerTiers.append([volume, self.safe_number(spotFee, 'maker')])
+        spotTiers = {
+            'taker': spotTakerTiers,
+            'maker': spotMakerTiers,
         }
+        futureTakerTiers = []
+        futureMakerTiers = []
+        for i in range(0, len(futureFees)):
+            futureFee = futureFees[i]
+            futureTakerTiers.append([None, self.safe_number(futureFee, 'taker')])
+            futureMakerTiers.append([None, self.safe_number(futureFee, 'maker')])
+        futureTiers = {
+            'taker': futureTakerTiers,
+            'maker': futureMakerTiers,
+        }
+        for i in range(0, len(self.symbols)):
+            symbol = self.symbols[i]
+            market = self.market(symbol)
+            fee = {
+                'info': response,
+                'symbol': symbol,
+                'percentage': True,
+                'tierBased': True,
+            }
+            if self.safe_value(market, 'spot'):
+                fee['maker'] = spotMakerFee
+                fee['taker'] = spotTakerFee
+                fee['tiers'] = spotTiers
+            elif self.safe_value(market, 'contract'):
+                fee['maker'] = futureMakerFee
+                fee['taker'] = futureTakerFee
+                fee['tiers'] = futureTiers
+            result[symbol] = fee
+        return result
 
     def fetch_trading_limits(self, symbols=None, params={}):
         self.load_markets()

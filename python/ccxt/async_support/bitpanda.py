@@ -15,6 +15,7 @@ from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
 from ccxt.base.errors import DDoSProtection
 from ccxt.base.errors import ExchangeNotAvailable
+from ccxt.base.precise import Precise
 
 
 class bitpanda(Exchange):
@@ -56,12 +57,12 @@ class bitpanda(Exchange):
                 'fetchFundingRateHistory': False,
                 'fetchFundingRates': False,
                 'fetchIndexOHLCV': False,
-                'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
                 'fetchMarkets': True,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
                 'fetchOHLCV': True,
+                'fetchOpenInterestHistory': False,
                 'fetchOpenOrders': True,
                 'fetchOrder': True,
                 'fetchOrderBook': True,
@@ -74,7 +75,10 @@ class bitpanda(Exchange):
                 'fetchTickers': True,
                 'fetchTime': True,
                 'fetchTrades': True,
+                'fetchTradingFee': False,
                 'fetchTradingFees': True,
+                'fetchTransfer': False,
+                'fetchTransfers': False,
                 'fetchWithdrawals': True,
                 'privateAPI': True,
                 'publicAPI': True,
@@ -82,6 +86,7 @@ class bitpanda(Exchange):
                 'setLeverage': False,
                 'setMarginMode': False,
                 'setPositionMode': False,
+                'transfer': False,
                 'withdraw': True,
             },
             'timeframes': {
@@ -283,6 +288,11 @@ class bitpanda(Exchange):
         })
 
     async def fetch_time(self, params={}):
+        """
+        fetches the current integer timestamp in milliseconds from the exchange server
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns int: the current integer timestamp in milliseconds from the exchange server
+        """
         response = await self.publicGetTime(params)
         #
         #     {
@@ -293,6 +303,11 @@ class bitpanda(Exchange):
         return self.safe_integer(response, 'epoch_millis')
 
     async def fetch_currencies(self, params={}):
+        """
+        fetches all available currencies on an exchange
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns dict: an associative dictionary of currencies
+        """
         response = await self.publicGetCurrencies(params)
         #
         #     [
@@ -323,6 +338,11 @@ class bitpanda(Exchange):
         return result
 
     async def fetch_markets(self, params={}):
+        """
+        retrieves data on all markets for bitpanda
+        :param dict params: extra parameters specific to the exchange api endpoint
+        :returns [dict]: an array of objects representing market data
+        """
         response = await self.publicGetInstruments(params)
         #
         #     [
@@ -427,41 +447,22 @@ class bitpanda(Exchange):
         #         }
         #     ]
         #
-        feeGroupsById = self.index_by(response, 'fee_group_id')
-        feeGroupId = self.safe_value(self.options, 'fee_group_id', 'default')
-        feeGroup = self.safe_value(feeGroupsById, feeGroupId, {})
-        feeTiers = self.safe_value(feeGroup, 'fee_tiers')
+        first = self.safe_value(response, 0, {})
+        feeTiers = self.safe_value(first, 'fee_tiers')
+        tiers = self.parse_fee_tiers(feeTiers)
+        firstTier = self.safe_value(feeTiers, 0, {})
         result = {}
         for i in range(0, len(self.symbols)):
             symbol = self.symbols[i]
-            fee = {
-                'info': feeGroup,
+            result[symbol] = {
+                'info': first,
                 'symbol': symbol,
-                'maker': None,
-                'taker': None,
+                'maker': self.safe_number(firstTier, 'maker_fee'),
+                'taker': self.safe_number(firstTier, 'taker_fee'),
                 'percentage': True,
                 'tierBased': True,
+                'tiers': tiers,
             }
-            takerFees = []
-            makerFees = []
-            for i in range(0, len(feeTiers)):
-                tier = feeTiers[i]
-                volume = self.safe_number(tier, 'volume')
-                taker = self.safe_number(tier, 'taker_fee')
-                maker = self.safe_number(tier, 'maker_fee')
-                taker /= 100
-                maker /= 100
-                takerFees.append([volume, taker])
-                makerFees.append([volume, maker])
-                if i == 0:
-                    fee['taker'] = taker
-                    fee['maker'] = maker
-            tiers = {
-                'taker': takerFees,
-                'maker': makerFees,
-            }
-            fee['tiers'] = tiers
-            result[symbol] = fee
         return result
 
     async def fetch_private_trading_fees(self, params={}):
@@ -489,31 +490,42 @@ class bitpanda(Exchange):
         #     }
         #
         activeFeeTier = self.safe_value(response, 'active_fee_tier', {})
-        result = {
-            'info': response,
-            'maker': self.safe_number(activeFeeTier, 'maker_fee'),
-            'taker': self.safe_number(activeFeeTier, 'taker_fee'),
-            'percentage': True,
-            'tierBased': True,
-        }
+        makerFee = self.safe_string(activeFeeTier, 'maker_fee')
+        takerFee = self.safe_string(activeFeeTier, 'taker_fee')
+        makerFee = Precise.string_div(makerFee, '100')
+        takerFee = Precise.string_div(takerFee, '100')
         feeTiers = self.safe_value(response, 'fee_tiers')
+        result = {}
+        tiers = self.parse_fee_tiers(feeTiers)
+        for i in range(0, len(self.symbols)):
+            symbol = self.symbols[i]
+            result[symbol] = {
+                'info': response,
+                'symbol': symbol,
+                'maker': self.parse_number(makerFee),
+                'taker': self.parse_number(takerFee),
+                'percentage': True,
+                'tierBased': True,
+                'tiers': tiers,
+            }
+        return result
+
+    def parse_fee_tiers(self, feeTiers, market=None):
         takerFees = []
         makerFees = []
         for i in range(0, len(feeTiers)):
             tier = feeTiers[i]
             volume = self.safe_number(tier, 'volume')
-            taker = self.safe_number(tier, 'taker_fee')
-            maker = self.safe_number(tier, 'maker_fee')
-            taker /= 100
-            maker /= 100
-            takerFees.append([volume, taker])
-            makerFees.append([volume, maker])
-        tiers = {
-            'taker': takerFees,
+            taker = self.safe_string(tier, 'taker_fee')
+            maker = self.safe_string(tier, 'maker_fee')
+            maker = Precise.string_div(maker, '100')
+            taker = Precise.string_div(taker, '100')
+            makerFees.append([volume, self.parse_number(maker)])
+            takerFees.append([volume, self.parse_number(taker)])
+        return {
             'maker': makerFees,
+            'taker': takerFees,
         }
-        result['tiers'] = tiers
-        return result
 
     def parse_ticker(self, ticker, market=None):
         #
@@ -565,9 +577,15 @@ class bitpanda(Exchange):
             'baseVolume': baseVolume,
             'quoteVolume': quoteVolume,
             'info': ticker,
-        }, market, False)
+        }, market)
 
     async def fetch_ticker(self, symbol, params={}):
+        """
+        fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+        :param str symbol: unified symbol of the market to fetch the ticker for
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns dict: a `ticker structure <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -595,6 +613,12 @@ class bitpanda(Exchange):
         return self.parse_ticker(response, market)
 
     async def fetch_tickers(self, symbols=None, params={}):
+        """
+        fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+        :param [str]|None symbols: unified symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns dict: an array of `ticker structures <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         await self.load_markets()
         response = await self.publicGetMarketTicker(params)
         #
@@ -625,6 +649,13 @@ class bitpanda(Exchange):
         return self.filter_by_array(result, 'symbol', symbols)
 
     async def fetch_order_book(self, symbol, limit=None, params={}):
+        """
+        fetches information on open orders with bid(buy) and ask(sell) prices, volumes and other data
+        :param str symbol: unified symbol of the market to fetch the order book for
+        :param int|None limit: the maximum amount of order book entries to return
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns dict: A dictionary of `order book structures <https://docs.ccxt.com/en/latest/manual.html#order-book-structure>` indexed by market symbols
+        """
         await self.load_markets()
         request = {
             'instrument_code': self.market_id(symbol),
@@ -739,6 +770,15 @@ class bitpanda(Exchange):
         ]
 
     async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        """
+        fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+        :param str symbol: unified symbol of the market to fetch OHLCV data for
+        :param str timeframe: the length of time each candle represents
+        :param int|None since: timestamp in ms of the earliest candle to fetch
+        :param int|None limit: the maximum amount of candles to fetch
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns [[int]]: A list of candles ordered as timestamp, open, high, low, close, volume
+        """
         await self.load_markets()
         market = self.market(symbol)
         periodUnit = self.safe_string(self.timeframes, timeframe)
@@ -851,6 +891,14 @@ class bitpanda(Exchange):
         }, market)
 
     async def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        """
+        get the list of most recent trades for a particular symbol
+        :param str symbol: unified symbol of the market to fetch trades for
+        :param int|None since: timestamp in ms of the earliest trade to fetch
+        :param int|None limit: the maximum amount of trades to fetch
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns [dict]: a list of `trade structures <https://docs.ccxt.com/en/latest/manual.html?#public-trades>`
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -894,6 +942,11 @@ class bitpanda(Exchange):
         return self.safe_balance(result)
 
     async def fetch_balance(self, params={}):
+        """
+        query for balance and get the amount of funds available for trading or funds locked in orders
+        :param dict params: extra parameters specific to the bitpanda api endpoint
+        :returns dict: a `balance structure <https://docs.ccxt.com/en/latest/manual.html?#balance-structure>`
+        """
         await self.load_markets()
         response = await self.privateGetAccountBalances(params)
         #
@@ -1478,7 +1531,7 @@ class bitpanda(Exchange):
         if since is not None:
             to = self.safe_string(params, 'to')
             if to is None:
-                raise ArgumentsRequired(self.id + ' fetchOrders() requires a "to" iso8601 string param with the since argument is specified, max range is 100 days')
+                raise ArgumentsRequired(self.id + ' fetchOpenOrders() requires a "to" iso8601 string param with the since argument is specified, max range is 100 days')
             request['from'] = self.iso8601(since)
         if limit is not None:
             request['max_page_size'] = limit

@@ -40,10 +40,10 @@ class coincheck(Exchange):
                 'fetchFundingRateHistory': False,
                 'fetchFundingRates': False,
                 'fetchIndexOHLCV': False,
-                'fetchIsolatedPositions': False,
                 'fetchLeverage': False,
                 'fetchMarkOHLCV': False,
                 'fetchMyTrades': True,
+                'fetchOpenInterestHistory': False,
                 'fetchOpenOrders': True,
                 'fetchOrderBook': True,
                 'fetchPosition': False,
@@ -52,6 +52,8 @@ class coincheck(Exchange):
                 'fetchPremiumIndexOHLCV': False,
                 'fetchTicker': True,
                 'fetchTrades': True,
+                'fetchTradingFee': False,
+                'fetchTradingFees': True,
                 'fetchWithdrawals': True,
                 'reduceMargin': False,
                 'setLeverage': False,
@@ -171,6 +173,11 @@ class coincheck(Exchange):
         return self.safe_balance(result)
 
     def fetch_balance(self, params={}):
+        """
+        query for balance and get the amount of funds available for trading or funds locked in orders
+        :param dict params: extra parameters specific to the coincheck api endpoint
+        :returns dict: a `balance structure <https://docs.ccxt.com/en/latest/manual.html?#balance-structure>`
+        """
         self.load_markets()
         response = self.privateGetAccountsBalance(params)
         return self.parse_balance(response)
@@ -238,6 +245,13 @@ class coincheck(Exchange):
         }, market)
 
     def fetch_order_book(self, symbol, limit=None, params={}):
+        """
+        fetches information on open orders with bid(buy) and ask(sell) prices, volumes and other data
+        :param str symbol: unified symbol of the market to fetch the order book for
+        :param int|None limit: the maximum amount of order book entries to return
+        :param dict params: extra parameters specific to the coincheck api endpoint
+        :returns dict: A dictionary of `order book structures <https://docs.ccxt.com/en/latest/manual.html#order-book-structure>` indexed by market symbols
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -282,9 +296,15 @@ class coincheck(Exchange):
             'baseVolume': self.safe_string(ticker, 'volume'),
             'quoteVolume': None,
             'info': ticker,
-        }, market, False)
+        }, market)
 
     def fetch_ticker(self, symbol, params={}):
+        """
+        fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+        :param str symbol: unified symbol of the market to fetch the ticker for
+        :param dict params: extra parameters specific to the coincheck api endpoint
+        :returns dict: a `ticker structure <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         if symbol != 'BTC/JPY':
             raise BadSymbol(self.id + ' fetchTicker() supports BTC/JPY only')
         self.load_markets()
@@ -359,8 +379,7 @@ class coincheck(Exchange):
                 quote = self.safe_currency_code(quoteId)
                 symbol = base + '/' + quote
         if symbol is None:
-            if market is not None:
-                symbol = market['symbol']
+            symbol = self.safe_symbol(None, market)
         takerOrMaker = None
         amountString = None
         costString = None
@@ -433,6 +452,14 @@ class coincheck(Exchange):
         return self.parse_trades(transactions, market, since, limit)
 
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        """
+        get the list of most recent trades for a particular symbol
+        :param str symbol: unified symbol of the market to fetch trades for
+        :param int|None since: timestamp in ms of the earliest trade to fetch
+        :param int|None limit: the maximum amount of trades to fetch
+        :param dict params: extra parameters specific to the coincheck api endpoint
+        :returns [dict]: a list of `trade structures <https://docs.ccxt.com/en/latest/manual.html?#public-trades>`
+        """
         self.load_markets()
         market = self.market(symbol)
         request = {
@@ -453,6 +480,44 @@ class coincheck(Exchange):
         #
         data = self.safe_value(response, 'data', [])
         return self.parse_trades(data, market, since, limit)
+
+    def fetch_trading_fees(self, params={}):
+        self.load_markets()
+        response = self.privateGetAccounts(params)
+        #
+        #     {
+        #         success: True,
+        #         id: '7487995',
+        #         email: 'some@email.com',
+        #         identity_status: 'identity_pending',
+        #         bitcoin_address: null,
+        #         lending_leverage: '4',
+        #         taker_fee: '0.0',
+        #         maker_fee: '0.0',
+        #         exchange_fees: {
+        #           btc_jpy: {taker_fee: '0.0', maker_fee: '0.0'},
+        #           etc_jpy: {taker_fee: '0.0', maker_fee: '0.0'},
+        #           fct_jpy: {taker_fee: '0.0', maker_fee: '0.0'},
+        #           mona_jpy: {taker_fee: '0.0', maker_fee: '0.0'},
+        #           plt_jpy: {taker_fee: '0.0', maker_fee: '0.0'}
+        #         }
+        #     }
+        #
+        fees = self.safe_value(response, 'exchange_fees', {})
+        result = {}
+        for i in range(0, len(self.symbols)):
+            symbol = self.symbols[i]
+            market = self.market(symbol)
+            fee = self.safe_value(fees, market['id'], {})
+            result[symbol] = {
+                'info': fee,
+                'symbol': symbol,
+                'maker': self.safe_number(fee, 'maker_fee'),
+                'taker': self.safe_number(fee, 'taker_fee'),
+                'percentage': True,
+                'tierBased': False,
+            }
+        return result
 
     def create_order(self, symbol, type, side, amount, price=None, params={}):
         self.load_markets()

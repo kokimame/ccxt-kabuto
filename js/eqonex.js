@@ -24,6 +24,9 @@ module.exports = class eqonex extends Exchange {
                 'option': false,
                 'cancelOrder': true,
                 'createOrder': true,
+                'createStopLimitOrder': true,
+                'createStopMarketOrder': true,
+                'createStopOrder': true,
                 'editOrder': true,
                 'fetchBalance': true,
                 'fetchBorrowRate': false,
@@ -44,6 +47,7 @@ module.exports = class eqonex extends Exchange {
                 'fetchOrders': true,
                 'fetchTicker': undefined,
                 'fetchTrades': true,
+                'fetchTradingFee': false,
                 'fetchTradingFees': true,
                 'fetchTradingLimits': true,
                 'fetchWithdrawals': true,
@@ -126,6 +130,13 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name eqonex#fetchMarkets
+         * @description retrieves data on all markets for eqonex
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         const request = {
             'verbose': true,
         };
@@ -319,6 +330,13 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
+        /**
+         * @method
+         * @name eqonex#fetchCurrencies
+         * @description fetches all available currencies on an exchange
+         * @param {dict} params extra parameters specific to the eqonex api endpoint
+         * @returns {dict} an associative dictionary of currencies
+         */
         const response = await this.publicGetGetInstruments (params);
         //
         //     {
@@ -394,6 +412,17 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name eqonex#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {str} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {str} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {dict} params extra parameters specific to the eqonex api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -483,6 +512,15 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name eqonex#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the eqonex api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -513,6 +551,16 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name eqonex#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the eqonex api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -579,7 +627,7 @@ module.exports = class eqonex extends Exchange {
         let priceString = undefined;
         let amountString = undefined;
         let fee = undefined;
-        let symbol = undefined;
+        let marketId = undefined;
         if (Array.isArray (trade)) {
             id = this.safeString (trade, 3);
             priceString = this.convertFromScale (this.safeString (trade, 0), market['precision']['price']);
@@ -594,8 +642,7 @@ module.exports = class eqonex extends Exchange {
         } else {
             id = this.safeString (trade, 'execId');
             timestamp = this.safeInteger (trade, 'time');
-            const marketId = this.safeString (trade, 'symbol');
-            symbol = this.safeSymbol (marketId, market);
+            marketId = this.safeString (trade, 'symbol');
             orderId = this.safeString (trade, 'orderId');
             side = this.safeStringLower (trade, 'side');
             type = this.parseOrderType (this.safeString (trade, 'ordType'));
@@ -612,15 +659,13 @@ module.exports = class eqonex extends Exchange {
                 };
             }
         }
-        if ((symbol === undefined) && (market !== undefined)) {
-            symbol = market['symbol'];
-        }
+        market = this.safeMarket (marketId, market);
         return this.safeTrade ({
             'info': trade,
             'id': id,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'order': orderId,
             'type': type,
             'side': side,
@@ -656,6 +701,13 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name eqonex#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the eqonex api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privatePostGetPositions (params);
         //     {
@@ -1268,24 +1320,78 @@ module.exports = class eqonex extends Exchange {
     }
 
     async fetchTradingFees (params = {}) {
-        // getExchangeInfo
+        await this.loadMarkets ();
         const response = await this.publicGetGetExchangeInfo (params);
-        const tradingFees = this.safeValue (response, 'spotFees', []);
-        const taker = {};
-        const maker = {};
-        for (let i = 0; i < tradingFees.length; i++) {
-            const tradingFee = tradingFees[i];
-            if (this.safeString (tradingFee, 'tier') !== undefined) {
-                taker[tradingFee['tier']] = this.safeNumber (tradingFee, 'taker');
-                maker[tradingFee['tier']] = this.safeNumber (tradingFee, 'maker');
-            }
+        //
+        //     {
+        //         tradingLimits: [],
+        //         withdrawLimits: [{ All: '0.0', Type: 'percent' }],
+        //         futuresFees: [
+        //             { tier: '0', maker: '0.000300', taker: '0.000500' },
+        //             { tier: '1', maker: '0.000200', taker: '0.000400' },
+        //             { tier: '2', maker: '0.000180', taker: '0.000400' },
+        //         ],
+        //         spotFees: [
+        //             { tier: '0', maker: '0.000900', taker: '0.001500', volume: '0' },
+        //             { tier: '1', maker: '0.000600', taker: '0.001250', volume: '200000' },
+        //             { tier: '2', maker: '0.000540', taker: '0.001200', volume: '2500000' },
+        //         ],
+        //         referrals: { earning: '0.30', discount: '0.05', duration: '180' }
+        //     }
+        //
+        const spotFees = this.safeValue (response, 'spotFees', []);
+        const firstSpotFee = this.safeValue (spotFees, 0, {});
+        const spotMakerFee = this.safeNumber (firstSpotFee, 'maker');
+        const spotTakerFee = this.safeNumber (firstSpotFee, 'taker');
+        const futureFees = this.safeValue (response, 'futuresFees', []);
+        const firstFutureFee = this.safeValue (futureFees, 0, {});
+        const futureMakerFee = this.safeNumber (firstFutureFee, 'maker');
+        const futureTakerFee = this.safeNumber (firstFutureFee, 'taker');
+        const spotTakerTiers = [];
+        const spotMakerTiers = [];
+        const result = {};
+        for (let i = 0; i < spotFees.length; i++) {
+            const spotFee = spotFees[i];
+            const volume = this.safeNumber (spotFee, 'volume');
+            spotTakerTiers.push ([ volume, this.safeNumber (spotFee, 'taker') ]);
+            spotMakerTiers.push ([ volume, this.safeNumber (spotFee, 'maker') ]);
         }
-        return {
-            'info': tradingFees,
-            'tierBased': true,
-            'maker': maker,
-            'taker': taker,
+        const spotTiers = {
+            'taker': spotTakerTiers,
+            'maker': spotMakerTiers,
         };
+        const futureTakerTiers = [];
+        const futureMakerTiers = [];
+        for (let i = 0; i < futureFees.length; i++) {
+            const futureFee = futureFees[i];
+            futureTakerTiers.push ([ undefined, this.safeNumber (futureFee, 'taker') ]);
+            futureMakerTiers.push ([ undefined, this.safeNumber (futureFee, 'maker') ]);
+        }
+        const futureTiers = {
+            'taker': futureTakerTiers,
+            'maker': futureMakerTiers,
+        };
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            const market = this.market (symbol);
+            const fee = {
+                'info': response,
+                'symbol': symbol,
+                'percentage': true,
+                'tierBased': true,
+            };
+            if (this.safeValue (market, 'spot')) {
+                fee['maker'] = spotMakerFee;
+                fee['taker'] = spotTakerFee;
+                fee['tiers'] = spotTiers;
+            } else if (this.safeValue (market, 'contract')) {
+                fee['maker'] = futureMakerFee;
+                fee['taker'] = futureTakerFee;
+                fee['tiers'] = futureTiers;
+            }
+            result[symbol] = fee;
+        }
+        return result;
     }
 
     async fetchTradingLimits (symbols = undefined, params = {}) {

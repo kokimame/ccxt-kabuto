@@ -50,13 +50,13 @@ class bytetrade extends Exchange {
                 'fetchFundingRateHistory' => false,
                 'fetchFundingRates' => false,
                 'fetchIndexOHLCV' => false,
-                'fetchIsolatedPositions' => false,
                 'fetchLeverage' => false,
                 'fetchLeverageTiers' => false,
                 'fetchMarkets' => true,
                 'fetchMarkOHLCV' => false,
                 'fetchMyTrades' => true,
                 'fetchOHLCV' => true,
+                'fetchOpenInterestHistory' => false,
                 'fetchOpenOrders' => true,
                 'fetchOrder' => true,
                 'fetchOrderBook' => true,
@@ -68,6 +68,8 @@ class bytetrade extends Exchange {
                 'fetchTicker' => true,
                 'fetchTickers' => true,
                 'fetchTrades' => true,
+                'fetchTradingFee' => false,
+                'fetchTradingFees' => true,
                 'fetchWithdrawals' => true,
                 'reduceMargin' => false,
                 'setLeverage' => false,
@@ -159,6 +161,11 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_currencies($params = array ()) {
+        /**
+         * fetches all available $currencies on an exchange
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {dict} an associative dictionary of $currencies
+         */
         $currencies = $this->publicGetCurrencies ($params);
         $result = array();
         for ($i = 0; $i < count($currencies); $i++) {
@@ -261,6 +268,11 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_markets($params = array ()) {
+        /**
+         * retrieves data on all $markets for bytetrade
+         * @param {dict} $params extra parameters specific to the exchange api endpoint
+         * @return {[dict]} an array of objects representing $market data
+         */
         $markets = $this->publicGetSymbols ($params);
         //
         //     array(
@@ -297,8 +309,8 @@ class bytetrade extends Exchange {
         for ($i = 0; $i < count($markets); $i++) {
             $market = $markets[$i];
             $id = $this->safe_string($market, 'symbol');
-            $base = $this->safe_string($market, 'baseName');
-            $quote = $this->safe_string($market, 'quoteName');
+            $base = $this->safe_string($market, 'baseName', '');
+            $quote = $this->safe_string($market, 'quoteName', '');
             $baseId = $this->safe_string($market, 'base');
             $quoteId = $this->safe_string($market, 'quote');
             $normalBase = explode('@' . $baseId, $base)[0];
@@ -341,7 +353,7 @@ class bytetrade extends Exchange {
                 'swap' => false,
                 'future' => false,
                 'option' => false,
-                'active' => $this->safe_string($market, 'active'),
+                'active' => $this->safe_value($market, 'active'),
                 'contract' => false,
                 'linear' => null,
                 'inverse' => null,
@@ -396,8 +408,13 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_balance($params = array ()) {
+        /**
+         * query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {dict} a ~@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure balance structure~
+         */
         if (!(is_array($params) && array_key_exists('userid', $params)) && ($this->apiKey === null)) {
-            throw new ArgumentsRequired($this->id . ' fetchDeposits() requires $this->apiKey or userid argument');
+            throw new ArgumentsRequired($this->id . ' fetchBalance() requires $this->apiKey or userid argument');
         }
         $this->load_markets();
         $request = array(
@@ -408,6 +425,13 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_order_book($symbol, $limit = null, $params = array ()) {
+        /**
+         * fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} $symbol unified $symbol of the $market to fetch the order book for
+         * @param {int|null} $limit the maximum amount of order book entries to return
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {dict} A dictionary of {@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure order book structures} indexed by $market symbols
+         */
         $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -469,10 +493,16 @@ class bytetrade extends Exchange {
             'baseVolume' => $this->safe_string($ticker, 'baseVolume'),
             'quoteVolume' => $this->safe_string($ticker, 'quoteVolume'),
             'info' => $ticker,
-        ), $market, false);
+        ), $market);
     }
 
     public function fetch_ticker($symbol, $params = array ()) {
+        /**
+         * fetches a price $ticker, a statistical calculation with the information calculated over the past 24 hours for a specific $market
+         * @param {str} $symbol unified $symbol of the $market to fetch the $ticker for
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {dict} a {@link https://docs.ccxt.com/en/latest/manual.html#$ticker-structure $ticker structure}
+         */
         $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -511,12 +541,24 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_bids_asks($symbols = null, $params = array ()) {
+        /**
+         * fetches the bid and ask price and volume for multiple markets
+         * @param {[str]|null} $symbols unified $symbols of the markets to fetch the bids and asks for, all markets are returned if not assigned
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {dict} an array of {@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure ticker structures}
+         */
         $this->load_markets();
         $response = $this->marketGetDepth ($params);
         return $this->parse_tickers($response, $symbols);
     }
 
     public function fetch_tickers($symbols = null, $params = array ()) {
+        /**
+         * fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+         * @param {[str]|null} $symbols unified $symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {dict} an array of {@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure ticker structures}
+         */
         $this->load_markets();
         $response = $this->marketGetTickers ($params);
         return $this->parse_tickers($response, $symbols);
@@ -544,6 +586,15 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_ohlcv($symbol, $timeframe = '1m', $since = null, $limit = null, $params = array ()) {
+        /**
+         * fetches historical candlestick data containing the open, high, low, and close price, and the volume of a $market
+         * @param {str} $symbol unified $symbol of the $market to fetch OHLCV data for
+         * @param {str} $timeframe the length of time each candle represents
+         * @param {int|null} $since timestamp in ms of the earliest candle to fetch
+         * @param {int|null} $limit the maximum amount of candles to fetch
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -614,14 +665,8 @@ class bytetrade extends Exchange {
         $side = $this->safe_string($trade, 'side');
         $datetime = $this->iso8601($timestamp); // $this->safe_string($trade, 'datetime');
         $order = $this->safe_string($trade, 'order');
-        $symbol = null;
-        if ($market === null) {
-            $marketId = $this->safe_string($trade, 'symbol');
-            $market = $this->safe_value($this->markets_by_id, $marketId);
-        }
-        if ($market !== null) {
-            $symbol = $market['symbol'];
-        }
+        $marketId = $this->safe_string($trade, 'symbol');
+        $market = $this->safe_market($marketId, $market);
         $feeData = $this->safe_value($trade, 'fee');
         $feeCostString = $this->safe_string($feeData, 'cost');
         $feeRateString = $this->safe_string($feeData, 'rate');
@@ -636,7 +681,7 @@ class bytetrade extends Exchange {
             'info' => $trade,
             'timestamp' => $timestamp,
             'datetime' => $datetime,
-            'symbol' => $symbol,
+            'symbol' => $market['symbol'],
             'id' => $id,
             'order' => $order,
             'type' => $type,
@@ -650,6 +695,14 @@ class bytetrade extends Exchange {
     }
 
     public function fetch_trades($symbol, $since = null, $limit = null, $params = array ()) {
+        /**
+         * get the list of most recent trades for a particular $symbol
+         * @param {str} $symbol unified $symbol of the $market to fetch trades for
+         * @param {int|null} $since timestamp in ms of the earliest trade to fetch
+         * @param {int|null} $limit the maximum amount of trades to fetch
+         * @param {dict} $params extra parameters specific to the bytetrade api endpoint
+         * @return {[dict]} a list of ~@link https://docs.ccxt.com/en/latest/manual.html?#public-trades trade structures~
+         */
         $this->load_markets();
         $market = $this->market($symbol);
         $request = array(
@@ -663,6 +716,57 @@ class bytetrade extends Exchange {
         }
         $response = $this->marketGetTrades (array_merge($request, $params));
         return $this->parse_trades($response, $market, $since, $limit);
+    }
+
+    public function fetch_trading_fees($params = array ()) {
+        $this->load_markets();
+        $response = $this->publicGetSymbols ($params);
+        //
+        //     array(
+        //         {
+        //             "symbol" => "122406567911",
+        //             "name" => "BTC/USDT",
+        //             "base" => "32",
+        //             "quote" => "57",
+        //             "marketStatus" => 0,
+        //             "baseName" => "BTC",
+        //             "quoteName" => "USDT",
+        //             "active" => true,
+        //             "maker" => "0.0008",
+        //             "taker" => "0.0008",
+        //             "precision" => array(
+        //                 "amount" => 6,
+        //                 "price" => 2,
+        //                 "minPrice":1
+        //             ),
+        //             "limits" => {
+        //                 "amount" => array(
+        //                     "min" => "0.000001",
+        //                     "max" => "-1"
+        //                 ),
+        //                 "price" => {
+        //                     "min" => "0.01",
+        //                     "max" => "-1"
+        //                 }
+        //             }
+        //        }
+        //        ...
+        //    )
+        //
+        $result = array();
+        for ($i = 0; $i < count($response); $i++) {
+            $symbolInfo = $response[$i];
+            $marketId = $this->safe_string($symbolInfo, 'name');
+            $symbol = $this->safe_symbol($marketId);
+            $result[$symbol] = array(
+                'info' => $symbolInfo,
+                'symbol' => $symbol,
+                'maker' => $this->safe_number($symbolInfo, 'maker'),
+                'taker' => $this->safe_number($symbolInfo, 'taker'),
+                'percentage' => true,
+            );
+        }
+        return $result;
     }
 
     public function parse_order($order, $market = null) {

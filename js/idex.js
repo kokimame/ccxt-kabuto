@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { PAD_WITH_ZERO } = require ('./base/functions/number');
+const { TICK_SIZE, PAD_WITH_ZERO, ROUND, TRUNCATE, DECIMAL_PLACES } = require ('./base/functions/number');
 const { InvalidOrder, InsufficientFunds, ExchangeError, ExchangeNotAvailable, DDoSProtection, BadRequest, NotSupported, InvalidAddress, AuthenticationError } = require ('./base/errors');
 const Precise = require ('./base/Precise');
 
@@ -18,7 +18,7 @@ module.exports = class idex extends Exchange {
             // public data endpoints 5 requests a second => 1000ms / 5 = 200ms between requests roughly (without Authentication)
             // all endpoints 10 requests a second => (1000ms / rateLimit) / 10 => 1 / 2 (with Authentication)
             'rateLimit': 200,
-            'version': 'v2',
+            'version': 'v3',
             'pro': true,
             'certified': true,
             'requiresWeb3': true,
@@ -33,6 +33,9 @@ module.exports = class idex extends Exchange {
                 'cancelOrder': true,
                 'createOrder': true,
                 'createReduceOnlyOrder': false,
+                'createStopLimitOrder': true,
+                'createStopMarketOrder': true,
+                'createStopOrder': true,
                 'fetchBalance': true,
                 'fetchBorrowRate': false,
                 'fetchBorrowRateHistories': false,
@@ -47,13 +50,13 @@ module.exports = class idex extends Exchange {
                 'fetchFundingRateHistory': false,
                 'fetchFundingRates': false,
                 'fetchIndexOHLCV': false,
-                'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
                 'fetchLeverageTiers': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
                 'fetchOHLCV': true,
+                'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
@@ -65,12 +68,15 @@ module.exports = class idex extends Exchange {
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'fetchTrades': true,
+                'fetchTradingFee': false,
+                'fetchTradingFees': true,
                 'fetchTransactions': undefined,
                 'fetchWithdrawals': true,
                 'reduceMargin': false,
                 'setLeverage': false,
                 'setMarginMode': false,
                 'setPositionMode': false,
+                'transfer': false,
                 'withdraw': true,
             },
             'timeframes': {
@@ -151,12 +157,33 @@ module.exports = class idex extends Exchange {
                 'apiKey': true,
                 'secret': true,
             },
+            'precisionMode': TICK_SIZE,
             'paddingMode': PAD_WITH_ZERO,
             'commonCurrencies': {},
         });
     }
 
+    priceToPrecision (symbol, price) {
+        //
+        // we override priceToPrecision to fix the following issue
+        // https://github.com/ccxt/ccxt/issues/13367
+        // {"code":"INVALID_PARAMETER","message":"invalid value provided for request parameter \"price\": all quantities and prices must be below 100 billion, above 0, need to be provided as strings, and always require 4 decimals ending with 4 zeroes"}
+        //
+        const market = this.market (symbol);
+        const info = this.safeValue (market, 'info', {});
+        const quoteAssetPrecision = this.safeInteger (info, 'quoteAssetPrecision');
+        price = this.decimalToPrecision (price, ROUND, market['precision']['price'], this.precisionMode);
+        return this.decimalToPrecision (price, TRUNCATE, quoteAssetPrecision, DECIMAL_PLACES, PAD_WITH_ZERO);
+    }
+
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name idex#fetchMarkets
+         * @description retrieves data on all markets for idex
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         const response = await this.publicGetMarkets (params);
         //
         // [
@@ -183,7 +210,8 @@ module.exports = class idex extends Exchange {
         //     "takerFeeRate": "0.002",
         //     "makerTradeMinimum": "0.15000000",
         //     "takerTradeMinimum": "0.05000000",
-        //     "withdrawalMinimum": "0.04000000"
+        //     "withdrawalMinimum": "0.04000000",
+        //     "tickSize":"0.00001000"
         // }
         //
         const maker = this.safeNumber (response2, 'makerFeeRate');
@@ -201,8 +229,9 @@ module.exports = class idex extends Exchange {
             const quote = this.safeCurrencyCode (quoteId);
             const basePrecisionString = this.safeString (entry, 'baseAssetPrecision');
             const quotePrecisionString = this.safeString (entry, 'quoteAssetPrecision');
-            const basePrecision = this.parsePrecision (basePrecisionString);
-            const quotePrecision = this.parsePrecision (quotePrecisionString);
+            const basePrecision = this.parseNumber (this.parsePrecision (basePrecisionString));
+            let quotePrecision = this.parseNumber (this.parsePrecision (quotePrecisionString));
+            quotePrecision = this.safeNumber (entry, 'tickSize', quotePrecision);
             const status = this.safeString (entry, 'status');
             let minCost = undefined;
             if (quote === 'ETH') {
@@ -223,7 +252,7 @@ module.exports = class idex extends Exchange {
                 'swap': false,
                 'future': false,
                 'option': false,
-                'active': (status === 'active'),
+                'active': (status !== 'inactive'),
                 'contract': false,
                 'linear': undefined,
                 'inverse': undefined,
@@ -235,8 +264,8 @@ module.exports = class idex extends Exchange {
                 'strike': undefined,
                 'optionType': undefined,
                 'precision': {
-                    'amount': parseInt (basePrecisionString),
-                    'price': parseInt (quotePrecisionString),
+                    'amount': basePrecision,
+                    'price': quotePrecision,
                 },
                 'limits': {
                     'leverage': {
@@ -244,11 +273,11 @@ module.exports = class idex extends Exchange {
                         'max': undefined,
                     },
                     'amount': {
-                        'min': this.parseNumber (basePrecision),
+                        'min': basePrecision,
                         'max': undefined,
                     },
                     'price': {
-                        'min': this.parseNumber (quotePrecision),
+                        'min': quotePrecision,
                         'max': undefined,
                     },
                     'cost': {
@@ -263,6 +292,14 @@ module.exports = class idex extends Exchange {
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name idex#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -292,6 +329,14 @@ module.exports = class idex extends Exchange {
     }
 
     async fetchTickers (symbols = undefined, params = {}) {
+        /**
+         * @method
+         * @name idex#fetchTickers
+         * @description fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+         * @param {[str]|undefined} symbols unified symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {dict} an array of [ticker structures]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         // [
         //   {
@@ -358,10 +403,21 @@ module.exports = class idex extends Exchange {
             'baseVolume': this.safeString (ticker, 'baseVolume'),
             'quoteVolume': this.safeString (ticker, 'quoteVolume'),
             'info': ticker,
-        }, market, false);
+        }, market);
     }
 
     async fetchOHLCV (symbol, timeframe = '1m', since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name idex#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {str} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {str} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -414,6 +470,16 @@ module.exports = class idex extends Exchange {
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name idex#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -518,7 +584,55 @@ module.exports = class idex extends Exchange {
         }, market);
     }
 
+    async fetchTradingFees (params = {}) {
+        this.checkRequiredCredentials ();
+        await this.loadMarkets ();
+        const nonce = this.uuidv1 ();
+        const request = {
+            'nonce': nonce,
+        };
+        let response = undefined;
+        response = await this.privateGetUser (this.extend (request, params));
+        //
+        //     {
+        //         depositEnabled: true,
+        //         orderEnabled: true,
+        //         cancelEnabled: true,
+        //         withdrawEnabled: true,
+        //         totalPortfolioValueUsd: '0.00',
+        //         makerFeeRate: '0.0000',
+        //         takerFeeRate: '0.0025',
+        //         takerIdexFeeRate: '0.0005',
+        //         takerLiquidityProviderFeeRate: '0.0020'
+        //     }
+        //
+        const maker = this.safeNumber (response, 'makerFeeRate');
+        const taker = this.safeNumber (response, 'takerFeeRate');
+        const result = {};
+        for (let i = 0; i < this.symbols.length; i++) {
+            const symbol = this.symbols[i];
+            result[symbol] = {
+                'info': response,
+                'symbol': symbol,
+                'maker': maker,
+                'taker': taker,
+                'percentage': true,
+                'tierBased': false,
+            };
+        }
+        return result;
+    }
+
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name idex#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -575,6 +689,13 @@ module.exports = class idex extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
+        /**
+         * @method
+         * @name idex#fetchCurrencies
+         * @description fetches all available currencies on an exchange
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {dict} an associative dictionary of currencies
+         */
         // [
         //   {
         //     name: 'Ether',
@@ -634,6 +755,13 @@ module.exports = class idex extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name idex#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the idex api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         this.checkRequiredCredentials ();
         await this.loadMarkets ();
         const nonce1 = this.uuidv1 ();
@@ -652,7 +780,7 @@ module.exports = class idex extends Exchange {
         // ]
         const extendedRequest = this.extend (request, params);
         if (extendedRequest['wallet'] === undefined) {
-            throw new BadRequest (this.id + ' wallet is undefined, set this.walletAddress or "address" in params');
+            throw new BadRequest (this.id + ' fetchBalance() wallet is undefined, set this.walletAddress or "address" in params');
         }
         let response = undefined;
         try {
@@ -709,7 +837,7 @@ module.exports = class idex extends Exchange {
         // ]
         const extendedRequest = this.extend (request, params);
         if (extendedRequest['wallet'] === undefined) {
-            throw new BadRequest (this.id + ' walletAddress is undefined, set this.walletAddress or "address" in params');
+            throw new BadRequest (this.id + ' fetchMyTrades() walletAddress is undefined, set this.walletAddress or "address" in params');
         }
         let response = undefined;
         try {
@@ -960,7 +1088,7 @@ module.exports = class idex extends Exchange {
         let stopPriceString = undefined;
         if ((type === 'stopLossLimit') || (type === 'takeProfitLimit') || ('stopPrice' in params)) {
             if (!('stopPrice' in params)) {
-                throw new BadRequest (this.id + ' stopPrice is a required parameter for ' + type + 'orders');
+                throw new BadRequest (this.id + ' createOrder() stopPrice is a required parameter for ' + type + 'orders');
             }
             stopPriceString = this.priceToPrecision (symbol, params['stopPrice']);
         }
@@ -985,7 +1113,7 @@ module.exports = class idex extends Exchange {
         let amountEnum = 0; // base quantity
         if ('quoteOrderQuantity' in params) {
             if (type !== 'market') {
-                throw new NotSupported (this.id + ' quoteOrderQuantity is not supported for ' + type + ' orders, only supported for market orders');
+                throw new NotSupported (this.id + ' createOrder() quoteOrderQuantity is not supported for ' + type + ' orders, only supported for market orders');
             }
             amountEnum = 1;
             amount = this.safeNumber (params, 'quoteOrderQuantity');
@@ -1153,22 +1281,20 @@ module.exports = class idex extends Exchange {
             },
             'signature': signature,
         };
-        // {
-        //   withdrawalId: 'a61dcff0-ec4d-11ea-8b83-c78a6ecb3180',
-        //   asset: 'ETH',
-        //   assetContractAddress: '0x0000000000000000000000000000000000000000',
-        //   quantity: '0.20000000',
-        //   time: 1598962883190,
-        //   fee: '0.00024000',
-        //   txStatus: 'pending',
-        //   txId: null
-        // }
         const response = await this.privatePostWithdrawals (request);
-        const id = this.safeString (response, 'withdrawalId');
-        return {
-            'info': response,
-            'id': id,
-        };
+        //
+        //     {
+        //         withdrawalId: 'a61dcff0-ec4d-11ea-8b83-c78a6ecb3180',
+        //         asset: 'ETH',
+        //         assetContractAddress: '0x0000000000000000000000000000000000000000',
+        //         quantity: '0.20000000',
+        //         time: 1598962883190,
+        //         fee: '0.00024000',
+        //         txStatus: 'pending',
+        //         txId: null
+        //     }
+        //
+        return this.parseTransaction (response, currency);
     }
 
     async cancelOrder (id, symbol = undefined, params = {}) {
@@ -1270,33 +1396,52 @@ module.exports = class idex extends Exchange {
     }
 
     parseTransaction (transaction, currency = undefined) {
+        //
         // fetchDeposits
-        // {
-        //   depositId: 'e9970cc0-eb6b-11ea-9e89-09a5ebc1f98f',
-        //   asset: 'ETH',
-        //   quantity: '1.00000000',
-        //   txId: '0xcd4aac3171d7131cc9e795568c67938675185ac17641553ef54c8a7c294c8142',
-        //   txTime: 1598865853000,
-        //   confirmationTime: 1598865930231
-        // }
+        //
+        //     {
+        //         depositId: 'e9970cc0-eb6b-11ea-9e89-09a5ebc1f98f',
+        //         asset: 'ETH',
+        //         quantity: '1.00000000',
+        //         txId: '0xcd4aac3171d7131cc9e795568c67938675185ac17641553ef54c8a7c294c8142',
+        //         txTime: 1598865853000,
+        //         confirmationTime: 1598865930231
+        //     }
+        //
         // fetchWithdrwalas
-        // {
-        //   withdrawalId: 'a62d8760-ec4d-11ea-9fa6-47904c19499b',
-        //   asset: 'ETH',
-        //   assetContractAddress: '0x0000000000000000000000000000000000000000',
-        //   quantity: '0.20000000',
-        //   time: 1598962883288,
-        //   fee: '0.00024000',
-        //   txId: '0x305e9cdbaa85ad029f50578d13d31d777c085de573ed5334d95c19116d8c03ce',
-        //   txStatus: 'mined'
-        //  }
+        //
+        //     {
+        //         withdrawalId: 'a62d8760-ec4d-11ea-9fa6-47904c19499b',
+        //         asset: 'ETH',
+        //         assetContractAddress: '0x0000000000000000000000000000000000000000',
+        //         quantity: '0.20000000',
+        //         time: 1598962883288,
+        //         fee: '0.00024000',
+        //         txId: '0x305e9cdbaa85ad029f50578d13d31d777c085de573ed5334d95c19116d8c03ce',
+        //         txStatus: 'mined'
+        //     }
+        //
+        // withdraw
+        //
+        //     {
+        //         withdrawalId: 'a61dcff0-ec4d-11ea-8b83-c78a6ecb3180',
+        //         asset: 'ETH',
+        //         assetContractAddress: '0x0000000000000000000000000000000000000000',
+        //         quantity: '0.20000000',
+        //         time: 1598962883190,
+        //         fee: '0.00024000',
+        //         txStatus: 'pending',
+        //         txId: null
+        //     }
+        //
         let type = undefined;
         if ('depositId' in transaction) {
             type = 'deposit';
-        } else if ('withdrawalId' in transaction) {
+        } else if (('withdrawId' in transaction) || ('withdrawalId' in transaction)) {
             type = 'withdrawal';
         }
-        const id = this.safeString2 (transaction, 'depositId', 'withdrawId');
+        let id = this.safeString2 (transaction, 'depositId', 'withdrawId');
+        id = this.safeString (transaction, 'withdrawalId', id);
         const code = this.safeCurrencyCode (this.safeString (transaction, 'asset'), currency);
         const amount = this.safeNumber (transaction, 'quantity');
         const txid = this.safeString (transaction, 'txId');

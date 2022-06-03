@@ -4,13 +4,6 @@
 # https://github.com/ccxt/ccxt/blob/master/CONTRIBUTING.md#how-to-contribute-code
 
 from ccxt.async_support.base.exchange import Exchange
-
-# -----------------------------------------------------------------------------
-
-try:
-    basestring  # Python 3
-except NameError:
-    basestring = str  # Python 2
 from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import AuthenticationError
 from ccxt.base.errors import PermissionDenied
@@ -56,6 +49,12 @@ class bitforex(Exchange):
                 'fetchTicker': True,
                 'fetchTickers': None,
                 'fetchTrades': True,
+                'fetchTransfer': False,
+                'fetchTransfers': False,
+                'fetchWithdrawal': False,
+                'fetchWithdrawals': False,
+                'transfer': False,
+                'withdraw': False,
             },
             'timeframes': {
                 '1m': '1min',
@@ -83,7 +82,9 @@ class bitforex(Exchange):
                     'get': {
                         'api/v1/market/symbols': 20,
                         'api/v1/market/ticker': 4,
+                        'api/v1/market/ticker-all': 4,
                         'api/v1/market/depth': 4,
+                        'api/v1/market/depth-all': 4,
                         'api/v1/market/trades': 20,
                         'api/v1/market/kline': 20,
                     },
@@ -144,6 +145,11 @@ class bitforex(Exchange):
         })
 
     async def fetch_markets(self, params={}):
+        """
+        retrieves data on all markets for bitforex
+        :param dict params: extra parameters specific to the exchange api endpoint
+        :returns [dict]: an array of objects representing market data
+        """
         response = await self.publicGetApiV1MarketSymbols(params)
         #
         #    {
@@ -238,9 +244,7 @@ class bitforex(Exchange):
         #          "tid":"1131019639"
         #      }
         #
-        symbol = None
-        if market is not None:
-            symbol = market['symbol']
+        market = self.safe_market(None, market)
         timestamp = self.safe_integer(trade, 'time')
         id = self.safe_string(trade, 'tid')
         orderId = None
@@ -253,7 +257,7 @@ class bitforex(Exchange):
             'id': id,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'symbol': symbol,
+            'symbol': market['symbol'],
             'type': None,
             'side': side,
             'price': priceString,
@@ -265,6 +269,14 @@ class bitforex(Exchange):
         }, market)
 
     async def fetch_trades(self, symbol, since=None, limit=None, params={}):
+        """
+        get the list of most recent trades for a particular symbol
+        :param str symbol: unified symbol of the market to fetch trades for
+        :param int|None since: timestamp in ms of the earliest trade to fetch
+        :param int|None limit: the maximum amount of trades to fetch
+        :param dict params: extra parameters specific to the bitforex api endpoint
+        :returns [dict]: a list of `trade structures <https://docs.ccxt.com/en/latest/manual.html?#public-trades>`
+        """
         await self.load_markets()
         request = {
             'symbol': self.market_id(symbol),
@@ -306,6 +318,11 @@ class bitforex(Exchange):
         return self.safe_balance(result)
 
     async def fetch_balance(self, params={}):
+        """
+        query for balance and get the amount of funds available for trading or funds locked in orders
+        :param dict params: extra parameters specific to the bitforex api endpoint
+        :returns dict: a `balance structure <https://docs.ccxt.com/en/latest/manual.html?#balance-structure>`
+        """
         await self.load_markets()
         response = await self.privatePostApiV1FundAllAccount(params)
         return self.parse_balance(response)
@@ -345,15 +362,21 @@ class bitforex(Exchange):
             'baseVolume': self.safe_string(ticker, 'vol'),
             'quoteVolume': None,
             'info': ticker,
-        }, market, False)
+        }, market)
 
     async def fetch_ticker(self, symbol, params={}):
+        """
+        fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+        :param str symbol: unified symbol of the market to fetch the ticker for
+        :param dict params: extra parameters specific to the bitforex api endpoint
+        :returns dict: a `ticker structure <https://docs.ccxt.com/en/latest/manual.html#ticker-structure>`
+        """
         await self.load_markets()
         market = self.markets[symbol]
         request = {
             'symbol': market['id'],
         }
-        response = await self.publicGetApiV1MarketTicker(self.extend(request, params))
+        response = await self.publicGetApiV1MarketTickerAll(self.extend(request, params))
         ticker = self.safe_value(response, 'data')
         #
         #     {
@@ -394,6 +417,15 @@ class bitforex(Exchange):
         ]
 
     async def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=None, params={}):
+        """
+        fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+        :param str symbol: unified symbol of the market to fetch OHLCV data for
+        :param str timeframe: the length of time each candle represents
+        :param int|None since: timestamp in ms of the earliest candle to fetch
+        :param int|None limit: the maximum amount of candles to fetch
+        :param dict params: extra parameters specific to the bitforex api endpoint
+        :returns [[int]]: A list of candles ordered as timestamp, open, high, low, close, volume
+        """
         await self.load_markets()
         market = self.market(symbol)
         request = {
@@ -418,6 +450,13 @@ class bitforex(Exchange):
         return self.parse_ohlcvs(data, market, timeframe, since, limit)
 
     async def fetch_order_book(self, symbol, limit=None, params={}):
+        """
+        fetches information on open orders with bid(buy) and ask(sell) prices, volumes and other data
+        :param str symbol: unified symbol of the market to fetch the order book for
+        :param int|None limit: the maximum amount of order book entries to return
+        :param dict params: extra parameters specific to the bitforex api endpoint
+        :returns dict: A dictionary of `order book structures <https://docs.ccxt.com/en/latest/manual.html#order-book-structure>` indexed by market symbols
+        """
         await self.load_markets()
         marketId = self.market_id(symbol)
         request = {
@@ -425,7 +464,7 @@ class bitforex(Exchange):
         }
         if limit is not None:
             request['size'] = limit
-        response = await self.publicGetApiV1MarketDepth(self.extend(request, params))
+        response = await self.publicGetApiV1MarketDepthAll(self.extend(request, params))
         data = self.safe_value(response, 'data')
         timestamp = self.safe_integer(response, 'time')
         return self.parse_order_book(data, symbol, timestamp, 'bids', 'asks', 'price', 'amount')
@@ -576,7 +615,7 @@ class bitforex(Exchange):
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
     def handle_errors(self, code, reason, url, method, headers, body, response, requestHeaders, requestBody):
-        if not isinstance(body, basestring):
+        if not isinstance(body, str):
             return  # fallback to default error handler
         if (body[0] == '{') or (body[0] == '['):
             feedback = self.id + ' ' + body

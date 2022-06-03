@@ -22,6 +22,7 @@ module.exports = class qtrade extends Exchange {
                 'www': 'https://qtrade.io',
                 'doc': 'https://qtrade-exchange.github.io/qtrade-docs',
                 'referral': 'https://qtrade.io/?ref=BKOQWVFGRH2C',
+                'fees': 'https://qtrade.io/fees',
             },
             'has': {
                 'CORS': undefined,
@@ -51,13 +52,13 @@ module.exports = class qtrade extends Exchange {
                 'fetchFundingRateHistory': false,
                 'fetchFundingRates': false,
                 'fetchIndexOHLCV': false,
-                'fetchIsolatedPositions': false,
                 'fetchLeverage': false,
                 'fetchLeverageTiers': false,
                 'fetchMarkets': true,
                 'fetchMarkOHLCV': false,
                 'fetchMyTrades': true,
                 'fetchOHLCV': true,
+                'fetchOpenInterestHistory': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
@@ -69,13 +70,18 @@ module.exports = class qtrade extends Exchange {
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'fetchTrades': true,
+                'fetchTradingFee': true,
+                'fetchTradingFees': false,
                 'fetchTransactions': undefined,
+                'fetchTransfer': false,
+                'fetchTransfers': true,
                 'fetchWithdrawal': true,
                 'fetchWithdrawals': true,
                 'reduceMargin': false,
                 'setLeverage': false,
                 'setMarginMode': false,
                 'setPositionMode': false,
+                'transfer': false,
                 'withdraw': true,
             },
             'timeframes': {
@@ -131,8 +137,8 @@ module.exports = class qtrade extends Exchange {
                     'feeSide': 'quote',
                     'tierBased': true,
                     'percentage': true,
-                    'taker': 0.005,
-                    'maker': 0.0,
+                    'taker': this.parseNumber ('0.005'),
+                    'maker': this.parseNumber ('0.0'),
                 },
                 'funding': {
                     'withdraw': {},
@@ -154,6 +160,13 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchMarkets
+         * @description retrieves data on all markets for qtrade
+         * @param {dict} params extra parameters specific to the exchange api endpoint
+         * @returns {[dict]} an array of objects representing market data
+         */
         const response = await this.publicGetMarkets (params);
         //
         //     {
@@ -257,6 +270,13 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchCurrencies
+         * @description fetches all available currencies on an exchange
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {dict} an associative dictionary of currencies
+         */
         const response = await this.publicGetCurrencies (params);
         //
         //     {
@@ -365,6 +385,17 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchOHLCV (symbol, timeframe = '5m', since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchOHLCV
+         * @description fetches historical candlestick data containing the open, high, low, and close price, and the volume of a market
+         * @param {str} symbol unified symbol of the market to fetch OHLCV data for
+         * @param {str} timeframe the length of time each candle represents
+         * @param {int|undefined} since timestamp in ms of the earliest candle to fetch
+         * @param {int|undefined} limit the maximum amount of candles to fetch
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {[[int]]} A list of candles ordered as timestamp, open, high, low, close, volume
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -389,6 +420,15 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchOrderBook (symbol, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchOrderBook
+         * @description fetches information on open orders with bid (buy) and ask (sell) prices, volumes and other data
+         * @param {str} symbol unified symbol of the market to fetch the order book for
+         * @param {int|undefined} limit the maximum amount of order book entries to return
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {dict} A dictionary of [order book structures]{@link https://docs.ccxt.com/en/latest/manual.html#order-book-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const marketId = this.marketId (symbol);
         const request = { 'market_string': marketId };
@@ -484,10 +524,18 @@ module.exports = class qtrade extends Exchange {
             'baseVolume': baseVolume,
             'quoteVolume': quoteVolume,
             'info': ticker,
-        }, market, false);
+        }, market);
     }
 
     async fetchTickers (symbols = undefined, params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchTickers
+         * @description fetches price tickers for multiple markets, statistical calculations with the information calculated over the past 24 hours each market
+         * @param {[str]|undefined} symbols unified symbols of the markets to fetch the ticker for, all market tickers are returned if not assigned
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {dict} an array of [ticker structures]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const response = await this.publicGetTickers (params);
         //
@@ -525,6 +573,14 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchTicker (symbol, params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchTicker
+         * @description fetches a price ticker, a statistical calculation with the information calculated over the past 24 hours for a specific market
+         * @param {str} symbol unified symbol of the market to fetch the ticker for
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {dict} a [ticker structure]{@link https://docs.ccxt.com/en/latest/manual.html#ticker-structure}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -555,6 +611,16 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchTrades (symbol, since = undefined, limit = undefined, params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchTrades
+         * @description get the list of most recent trades for a particular symbol
+         * @param {str} symbol unified symbol of the market to fetch trades for
+         * @param {int|undefined} since timestamp in ms of the earliest trade to fetch
+         * @param {int|undefined} limit the maximum amount of trades to fetch
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {[dict]} a list of [trade structures]{@link https://docs.ccxt.com/en/latest/manual.html?#public-trades}
+         */
         await this.loadMarkets ();
         const market = this.market (symbol);
         const request = {
@@ -711,6 +777,48 @@ module.exports = class qtrade extends Exchange {
         }, market);
     }
 
+    async fetchTradingFee (symbol, params = {}) {
+        await this.loadMarkets ();
+        const market = this.market (symbol);
+        const request = {
+            'market_string': market['id'],
+        };
+        const response = await this.publicGetMarketMarketString (this.extend (request, params));
+        //
+        //     {
+        //         data: {
+        //             market: {
+        //                 id: '41',
+        //                 market_currency: 'ETH',
+        //                 base_currency: 'BTC',
+        //                 maker_fee: '0',
+        //                 taker_fee: '0.005',
+        //                 metadata: {},
+        //                 can_trade: true,
+        //                 can_cancel: true,
+        //                 can_view: true,
+        //                 market_string: 'ETH_BTC',
+        //                 minimum_sell_amount: '0.001',
+        //                 minimum_buy_value: '0.0001',
+        //                 market_precision: '18',
+        //                 base_precision: '8'
+        //             },
+        //             recent_trades: []
+        //         }
+        //     }
+        //
+        const data = this.safeValue (response, 'data', {});
+        const marketData = this.safeValue (data, 'market', {});
+        return {
+            'info': marketData,
+            'symbol': symbol,
+            'maker': this.safeNumber (marketData, 'maker_fee'),
+            'taker': this.safeNumber (marketData, 'taker_fee'),
+            'percentage': true,
+            'tierBased': true,
+        };
+    }
+
     parseBalance (response) {
         const data = this.safeValue (response, 'data', {});
         let balances = this.safeValue (data, 'balances', []);
@@ -741,6 +849,13 @@ module.exports = class qtrade extends Exchange {
     }
 
     async fetchBalance (params = {}) {
+        /**
+         * @method
+         * @name qtrade#fetchBalance
+         * @description query for balance and get the amount of funds available for trading or funds locked in orders
+         * @param {dict} params extra parameters specific to the qtrade api endpoint
+         * @returns {dict} a [balance structure]{@link https://docs.ccxt.com/en/latest/manual.html?#balance-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privateGetBalancesAll (params);
         //
@@ -1198,6 +1313,68 @@ module.exports = class qtrade extends Exchange {
         const data = this.safeValue (response, 'data', {});
         const deposits = this.safeValue (data, 'deposits', []);
         return this.parseTransactions (deposits, currency, since, limit);
+    }
+
+    async fetchTransfers (code = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        let currency = undefined;
+        if (code !== undefined) {
+            currency = this.currency (code);
+        }
+        const response = await this.privateGetTransfers (params);
+        //
+        //     {
+        //         "data": {
+        //             "transfers": [
+        //                 {
+        //                     "amount": "0.5",
+        //                     "created_at": "2018-12-10T00:06:41.066665Z",
+        //                     "currency": "BTC",
+        //                     "id": 9,
+        //                     "reason_code": "referral_payout",
+        //                     "reason_metadata": {
+        //                         "note": "January referral earnings"
+        //                     },
+        //                     "sender_email": "qtrade",
+        //                     "sender_id": 218
+        //                 }
+        //             ]
+        //         }
+        //     }
+        //
+        const data = this.safeValue (response, 'data', {});
+        const transfers = this.safeValue (data, 'transfers', []);
+        return this.parseTransfers (transfers, currency, since, limit);
+    }
+
+    parseTransfer (transfer, currency = undefined) {
+        //
+        //     {
+        //         "amount": "0.5",
+        //         "created_at": "2018-12-10T00:06:41.066665Z",
+        //         "currency": "BTC",
+        //         "id": 9,
+        //         "reason_code": "referral_payout",
+        //         "reason_metadata": {
+        //             "note": "January referral earnings"
+        //         },
+        //         "sender_email": "qtrade",
+        //         "sender_id": 218
+        //     }
+        //
+        const currencyId = this.safeString (transfer, 'currency');
+        const dateTime = this.safeString (transfer, 'created_at');
+        return {
+            'info': transfer,
+            'id': this.safeString (transfer, 'id'),
+            'timestamp': this.parse8601 (dateTime),
+            'datetime': dateTime,
+            'currency': this.safeCurrencyCode (currencyId, currency),
+            'amount': this.safeNumber (transfer, 'amount'),
+            'fromAccount': this.safeString (transfer, 'sender_id'),
+            'toAccount': undefined,
+            'status': 'ok',
+        };
     }
 
     async fetchWithdrawal (id, code = undefined, params = {}) {
