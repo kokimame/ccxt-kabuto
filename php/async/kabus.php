@@ -145,6 +145,97 @@ class kabus extends Exchange {
         return array( 'Code' => $stock_code, 'Exchange' => $exchange, 'Market' => $market, 'Fiat' => $fiat );
     }
 
+    public function parse_order($order, $market = null) {
+        //     array('AccountType' => 2,
+        //       'CumQty' => 0.0,
+        //       'DelivType' => 2,
+        //       'Details' => [array('Commission' => 0.0,
+        //                    'CommissionTax' => 0.0,
+        //                    'DelivDay' => 20220427,
+        //                    'ExchangeID' => None,
+        //                    'ExecutionDay' => None,
+        //                    'ExecutionID' => None,
+        //                    'ID' => '20220423A01N86096041',
+        //                    'OrdType' => 1,
+        //                    'Price' => 0.0,
+        //                    'Qty' => 100.0,
+        //                    'RecType' => 1,
+        //                    'SeqNum' => 1,
+        //                    'State' => 3,
+        //                    'TransactTime' => '2022-04-23T14:31:16.652838+09:00'),
+        //                   array('Commission' => 0.0,
+        //                    'CommissionTax' => 0.0,
+        //                    'DelivDay' => 20220427,
+        //                    'ExchangeID' => None,
+        //                    'ExecutionDay' => None,
+        //                    'ExecutionID' => None,
+        //                    'ID' => '20220423B01N86096042',
+        //                    'OrdType' => 1,
+        //                    'Price' => 0.0,
+        //                    'Qty' => 100.0,
+        //                    'RecType' => 4,
+        //                    'SeqNum' => 2,
+        //                    'State' => 1,
+        //                    'TransactTime' => '2022-04-23T14:31:16.652838+09:00')],
+        //       'Exchange' => 1,
+        //       'ExchangeName' => '東証ス',
+        //       'ExpireDay' => 20220425,
+        //       'ID' => '20220423A01N86096041',
+        //       'OrdType' => 1,
+        //       'OrderQty' => 100.0,
+        //       'OrderState' => 1,
+        //       'Price' => 0.0,
+        //       'RecvTime' => '2022-04-23T14:31:16.652838+09:00',
+        //       'Side' => '2',
+        //       'State' => 1,
+        //       'Symbol' => '9318',
+        //       'SymbolName' => 'アジア開発キャピタル'),
+        //     }
+        $id = $this->safe_string($order, 'ID');
+        $price = $this->safe_float($order, 'Price');
+        $amount = $this->safe_float($order, 'OrderQty');
+        $cumQty = $this->safe_float($order, 'CumQty');
+        $side = $this->safe_string_lower(array( '1' => 'sell', '2' => 'buy' ), $order['Side']);
+        $timestamp = $this->parse8601($this->safe_string($order, 'RecvTime'));
+        $stock_code = $this->safe_string($order, 'Symbol');
+        $exchange = $this->safe_string($order, 'Exchange');
+        $order_type = 'limit';
+        if ($price === 0) {
+            $order_type = 'market';
+        }
+        // Order $status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
+        $n_details = is_array($order['Details']) ? count($order['Details']) : 0;
+        if ($n_details < 1) {
+            throw new ExchangeError($this->id . ' expects to have at least 1 detail per $order but 0 given');
+        }
+        $lastDetail = $order['Details'][$n_details - 1];
+        // Get the latest state from the Details
+        $status = $this->safe_string(array( '1' => 'open', '3' => 'closed' ), $lastDetail['State']);
+        return $this->safe_order(array(
+            'id' => $id,
+            'clientOrderId' => null,
+            'info' => $order,
+            'timestamp' => $timestamp,
+            'datetime' => $this->iso8601($timestamp),
+            'lastTradeTimestamp' => null,
+            'status' => $status,
+            'symbol' => $stock_code . '@' . $exchange . '/JPY',
+            'type' => $order_type,
+            'timeInForce' => null,
+            'postOnly' => null,
+            'side' => $side,
+            'price' => $price,
+            'stopPrice' => null,
+            'cost' => null,
+            'amount' => $amount,
+            'filled' => $cumQty,
+            'remaining' => $amount - $cumQty,
+            'fee' => null,
+            'average' => null,
+            'trades' => null,
+        ), $market);
+    }
+
     public function prepare_order($symbol, $type, $side, $amount, $price) {
         // 現物株式取引用のパラメタ設定
         $symbolParam = $this->parse_symbol($symbol);
@@ -185,10 +276,43 @@ class kabus extends Exchange {
         $response = yield $this->privatePostSendorder (array_merge($body, $params));
         // array('OrderId' => '20220423A01N86096051', 'Result' => 0)
         $id = $this->safe_string($response, 'OrderId');
-        return array(
-            'info' => $response,
-            'id' => $id,
+        $result = $this->safe_string($response, 'Result');
+        if ($result === '0') {
+            // NOTE => Since createOrder in Kabus does not return the detail of a newly created $order,
+            // we look for the detail using fetchOrder right after the $order created.
+            // This process may introduce errors considering the $order perhaps is not ready/created in such a short time.
+            $order = $this->fetch_order($id);
+            $order['info'] = $response;
+            return $order;
+        } else {
+            return array(
+                'info' => $response,
+                'id' => $id,
+            );
+        }
+    }
+
+    public function cancel_order($id, $params = array ()) {
+        yield $this->load_markets();
+        $body = array(
+            'OrderID' => $id,
+            'Password' => $this->kabucom_password,
         );
+        $response = yield $this->privatePutCancelorder (array_merge($body, $params));
+        $result = $this->safe_string($response, 'Result');
+        if ($result === '0') {
+            // NOTE => Since createOrder in Kabus does not return the detail of a newly created $order,
+            // we look for the detail using fetchOrder right after the $order created.
+            // This process may introduce errors considering the $order perhaps is not ready/created in such a short time.
+            $order = $this->fetch_order($id);
+            $order['info'] = $response;
+            return $order;
+        } else {
+            return array(
+                'info' => $response,
+                'id' => $id,
+            );
+        }
     }
 
     public function fetch_token() {
@@ -297,97 +421,6 @@ class kabus extends Exchange {
         return $this->parse_trades($response, $market, $since, $limit);
     }
 
-    public function parse_order($order, $market = null) {
-        //     array('AccountType' => 2,
-        //       'CumQty' => 0.0,
-        //       'DelivType' => 2,
-        //       'Details' => [array('Commission' => 0.0,
-        //                    'CommissionTax' => 0.0,
-        //                    'DelivDay' => 20220427,
-        //                    'ExchangeID' => None,
-        //                    'ExecutionDay' => None,
-        //                    'ExecutionID' => None,
-        //                    'ID' => '20220423A01N86096041',
-        //                    'OrdType' => 1,
-        //                    'Price' => 0.0,
-        //                    'Qty' => 100.0,
-        //                    'RecType' => 1,
-        //                    'SeqNum' => 1,
-        //                    'State' => 3,
-        //                    'TransactTime' => '2022-04-23T14:31:16.652838+09:00'),
-        //                   array('Commission' => 0.0,
-        //                    'CommissionTax' => 0.0,
-        //                    'DelivDay' => 20220427,
-        //                    'ExchangeID' => None,
-        //                    'ExecutionDay' => None,
-        //                    'ExecutionID' => None,
-        //                    'ID' => '20220423B01N86096042',
-        //                    'OrdType' => 1,
-        //                    'Price' => 0.0,
-        //                    'Qty' => 100.0,
-        //                    'RecType' => 4,
-        //                    'SeqNum' => 2,
-        //                    'State' => 1,
-        //                    'TransactTime' => '2022-04-23T14:31:16.652838+09:00')],
-        //       'Exchange' => 1,
-        //       'ExchangeName' => '東証ス',
-        //       'ExpireDay' => 20220425,
-        //       'ID' => '20220423A01N86096041',
-        //       'OrdType' => 1,
-        //       'OrderQty' => 100.0,
-        //       'OrderState' => 1,
-        //       'Price' => 0.0,
-        //       'RecvTime' => '2022-04-23T14:31:16.652838+09:00',
-        //       'Side' => '2',
-        //       'State' => 1,
-        //       'Symbol' => '9318',
-        //       'SymbolName' => 'アジア開発キャピタル'),
-        //     }
-        $id = $this->safe_string($order, 'ID');
-        $price = $this->safe_float($order, 'Price');
-        $amount = $this->safe_float($order, 'OrderQty');
-        $cumQty = $this->safe_float($order, 'CumQty');
-        $side = $this->safe_string_lower(array( '1' => 'sell', '2' => 'buy' ), $order['Side']);
-        $timestamp = $this->parse8601($this->safe_string($order, 'RecvTime'));
-        $stock_code = $this->safe_string($order, 'Symbol');
-        $exchange = $this->safe_string($order, 'Exchange');
-        $order_type = 'limit';
-        if ($price === 0) {
-            $order_type = 'market';
-        }
-        // Order $status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
-        $n_details = is_array($order['Details']) ? count($order['Details']) : 0;
-        if ($n_details < 1) {
-            throw new ExchangeError($this->id . ' expects to have at least 1 detail per $order but 0 given');
-        }
-        $lastDetail = $order['Details'][$n_details - 1];
-        // Get the latest state from the Details
-        $status = $this->safe_string(array( '1' => 'open', '3' => 'closed' ), $lastDetail['State']);
-        return $this->safe_order(array(
-            'id' => $id,
-            'clientOrderId' => null,
-            'info' => $order,
-            'timestamp' => $timestamp,
-            'datetime' => $this->iso8601($timestamp),
-            'lastTradeTimestamp' => null,
-            'status' => $status,
-            'symbol' => $stock_code . '@' . $exchange . '/JPY',
-            'type' => $order_type,
-            'timeInForce' => null,
-            'postOnly' => null,
-            'side' => $side,
-            'price' => $price,
-            'stopPrice' => null,
-            'cost' => null,
-            'amount' => $amount,
-            'filled' => $cumQty,
-            'remaining' => $amount - $cumQty,
-            'fee' => null,
-            'average' => null,
-            'trades' => null,
-        ), $market);
-    }
-
     public function fetch_orders($since = null, $limit = 100, $params = array ()) {
         yield $this->load_markets();
         $params['product'] = 0;
@@ -418,24 +451,12 @@ class kabus extends Exchange {
     }
 
     public function fetch_order($id, $symbol = null, $params = array ()) {
-        if ($symbol === null) {
-            throw new ArgumentsRequired($this->id . ' fetchOrder() requires a `$symbol` argument');
-        }
         $orders = yield $this->fetch_orders();
         $ordersById = $this->index_by($orders, 'id');
         if (is_array($ordersById) && array_key_exists($id, $ordersById)) {
             return $ordersById[$id];
         }
         throw new OrderNotFound($this->id . 'No order found with $id ' . $id);
-    }
-
-    public function cancel_order($id, $params = array ()) {
-        yield $this->load_markets();
-        $body = array(
-            'OrderID' => $id,
-            'Password' => $this->kabucom_password,
-        );
-        return yield $this->privatePutCancelorder (array_merge($body, $params));
     }
 
     public function parse_balance($response) {
@@ -522,5 +543,11 @@ class kabus extends Exchange {
         }
         $response = $this->privatePutRegister ($body);
         return $response['RegistList'];
+    }
+
+    public function dummy_for_transpile() {
+        // Don't care.
+        // Dummy function to make transpile work.
+        throw $ArgumentsRequired;
     }
 }

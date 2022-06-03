@@ -137,6 +137,97 @@ module.exports = class kabus extends Exchange {
         return { 'Code': stock_code, 'Exchange': exchange, 'Market': market, 'Fiat': fiat };
     }
 
+    parseOrder (order, market = undefined) {
+        //     {'AccountType': 2,
+        //       'CumQty': 0.0,
+        //       'DelivType': 2,
+        //       'Details': [{'Commission': 0.0,
+        //                    'CommissionTax': 0.0,
+        //                    'DelivDay': 20220427,
+        //                    'ExchangeID': None,
+        //                    'ExecutionDay': None,
+        //                    'ExecutionID': None,
+        //                    'ID': '20220423A01N86096041',
+        //                    'OrdType': 1,
+        //                    'Price': 0.0,
+        //                    'Qty': 100.0,
+        //                    'RecType': 1,
+        //                    'SeqNum': 1,
+        //                    'State': 3,
+        //                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'},
+        //                   {'Commission': 0.0,
+        //                    'CommissionTax': 0.0,
+        //                    'DelivDay': 20220427,
+        //                    'ExchangeID': None,
+        //                    'ExecutionDay': None,
+        //                    'ExecutionID': None,
+        //                    'ID': '20220423B01N86096042',
+        //                    'OrdType': 1,
+        //                    'Price': 0.0,
+        //                    'Qty': 100.0,
+        //                    'RecType': 4,
+        //                    'SeqNum': 2,
+        //                    'State': 1,
+        //                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'}],
+        //       'Exchange': 1,
+        //       'ExchangeName': '東証ス',
+        //       'ExpireDay': 20220425,
+        //       'ID': '20220423A01N86096041',
+        //       'OrdType': 1,
+        //       'OrderQty': 100.0,
+        //       'OrderState': 1,
+        //       'Price': 0.0,
+        //       'RecvTime': '2022-04-23T14:31:16.652838+09:00',
+        //       'Side': '2',
+        //       'State': 1,
+        //       'Symbol': '9318',
+        //       'SymbolName': 'アジア開発キャピタル'},
+        //     }
+        const id = this.safeString (order, 'ID');
+        const price = this.safeFloat (order, 'Price');
+        const amount = this.safeFloat (order, 'OrderQty');
+        const cumQty = this.safeFloat (order, 'CumQty');
+        const side = this.safeStringLower ({ '1': 'sell', '2': 'buy' }, order['Side']);
+        const timestamp = this.parse8601 (this.safeString (order, 'RecvTime'));
+        const stock_code = this.safeString (order, 'Symbol');
+        const exchange = this.safeString (order, 'Exchange');
+        let order_type = 'limit';
+        if (price === 0) {
+            order_type = 'market';
+        }
+        // Order status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
+        const n_details = order['Details'].length;
+        if (n_details < 1) {
+            throw new ExchangeError (this.id + ' expects to have at least 1 detail per order but 0 given');
+        }
+        const lastDetail = order['Details'][n_details - 1];
+        // Get the latest state from the Details
+        const status = this.safeString ({ '1': 'open', '3': 'closed' }, lastDetail['State']);
+        return this.safeOrder ({
+            'id': id,
+            'clientOrderId': undefined,
+            'info': order,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'lastTradeTimestamp': undefined,
+            'status': status,
+            'symbol': stock_code + '@' + exchange + '/JPY',
+            'type': order_type,
+            'timeInForce': undefined,
+            'postOnly': undefined,
+            'side': side,
+            'price': price,
+            'stopPrice': undefined,
+            'cost': undefined,
+            'amount': amount,
+            'filled': cumQty,
+            'remaining': amount - cumQty,
+            'fee': undefined,
+            'average': undefined,
+            'trades': undefined,
+        }, market);
+    }
+
     prepareOrder (symbol, type, side, amount, price) {
         // 現物株式取引用のパラメタ設定
         const symbolParam = this.parseSymbol (symbol);
@@ -177,10 +268,45 @@ module.exports = class kabus extends Exchange {
         const response = await this.privatePostSendorder (this.extend (body, params));
         // {'OrderId': '20220423A01N86096051', 'Result': 0}
         const id = this.safeString (response, 'OrderId');
-        return {
-            'info': response,
-            'id': id,
+        const result = this.safeString (response, 'Result');
+        if (result === '0') {
+            // NOTE: Since createOrder in Kabus does not return the detail of a newly created order,
+            // we look for the detail using fetchOrder right after the order created.
+            // This process may introduce errors considering the order perhaps is not ready/created in such a short time.
+            // NOTE 2: Maybe does not have to call fetchOrder.
+            // Instead, use & return "symbol, type, side, id" of the order param
+            const order = this.fetchOrder (id);
+            order['info'] = response;
+            return order;
+        } else {
+            return {
+                'info': response,
+                'id': id,
+            };
+        }
+    }
+
+    async cancelOrder (id, params = {}) {
+        await this.loadMarkets ();
+        const body = {
+            'OrderID': id,
+            'Password': this.kabucom_password,
         };
+        const response = await this.privatePutCancelorder (this.extend (body, params));
+        const result = this.safeString (response, 'Result');
+        if (result === '0') {
+            // NOTE: Since createOrder in Kabus does not return the detail of a newly created order,
+            // we look for the detail using fetchOrder right after the order created.
+            // This process may introduce errors considering the order perhaps is not ready/created in such a short time.
+            const order = this.fetchOrder (id);
+            order['info'] = response;
+            return order;
+        } else {
+            return {
+                'info': response,
+                'id': id,
+            };
+        }
     }
 
     fetchToken () {
@@ -289,97 +415,6 @@ module.exports = class kabus extends Exchange {
         return this.parseTrades (response, market, since, limit);
     }
 
-    parseOrder (order, market = undefined) {
-        //     {'AccountType': 2,
-        //       'CumQty': 0.0,
-        //       'DelivType': 2,
-        //       'Details': [{'Commission': 0.0,
-        //                    'CommissionTax': 0.0,
-        //                    'DelivDay': 20220427,
-        //                    'ExchangeID': None,
-        //                    'ExecutionDay': None,
-        //                    'ExecutionID': None,
-        //                    'ID': '20220423A01N86096041',
-        //                    'OrdType': 1,
-        //                    'Price': 0.0,
-        //                    'Qty': 100.0,
-        //                    'RecType': 1,
-        //                    'SeqNum': 1,
-        //                    'State': 3,
-        //                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'},
-        //                   {'Commission': 0.0,
-        //                    'CommissionTax': 0.0,
-        //                    'DelivDay': 20220427,
-        //                    'ExchangeID': None,
-        //                    'ExecutionDay': None,
-        //                    'ExecutionID': None,
-        //                    'ID': '20220423B01N86096042',
-        //                    'OrdType': 1,
-        //                    'Price': 0.0,
-        //                    'Qty': 100.0,
-        //                    'RecType': 4,
-        //                    'SeqNum': 2,
-        //                    'State': 1,
-        //                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'}],
-        //       'Exchange': 1,
-        //       'ExchangeName': '東証ス',
-        //       'ExpireDay': 20220425,
-        //       'ID': '20220423A01N86096041',
-        //       'OrdType': 1,
-        //       'OrderQty': 100.0,
-        //       'OrderState': 1,
-        //       'Price': 0.0,
-        //       'RecvTime': '2022-04-23T14:31:16.652838+09:00',
-        //       'Side': '2',
-        //       'State': 1,
-        //       'Symbol': '9318',
-        //       'SymbolName': 'アジア開発キャピタル'},
-        //     }
-        const id = this.safeString (order, 'ID');
-        const price = this.safeFloat (order, 'Price');
-        const amount = this.safeFloat (order, 'OrderQty');
-        const cumQty = this.safeFloat (order, 'CumQty');
-        const side = this.safeStringLower ({ '1': 'sell', '2': 'buy' }, order['Side']);
-        const timestamp = this.parse8601 (this.safeString (order, 'RecvTime'));
-        const stock_code = this.safeString (order, 'Symbol');
-        const exchange = this.safeString (order, 'Exchange');
-        let order_type = 'limit';
-        if (price === 0) {
-            order_type = 'market';
-        }
-        // Order status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
-        const n_details = order['Details'].length;
-        if (n_details < 1) {
-            throw new ExchangeError (this.id + ' expects to have at least 1 detail per order but 0 given');
-        }
-        const lastDetail = order['Details'][n_details - 1];
-        // Get the latest state from the Details
-        const status = this.safeString ({ '1': 'open', '3': 'closed' }, lastDetail['State']);
-        return this.safeOrder ({
-            'id': id,
-            'clientOrderId': undefined,
-            'info': order,
-            'timestamp': timestamp,
-            'datetime': this.iso8601 (timestamp),
-            'lastTradeTimestamp': undefined,
-            'status': status,
-            'symbol': stock_code + '@' + exchange + '/JPY',
-            'type': order_type,
-            'timeInForce': undefined,
-            'postOnly': undefined,
-            'side': side,
-            'price': price,
-            'stopPrice': undefined,
-            'cost': undefined,
-            'amount': amount,
-            'filled': cumQty,
-            'remaining': amount - cumQty,
-            'fee': undefined,
-            'average': undefined,
-            'trades': undefined,
-        }, market);
-    }
-
     async fetchOrders (since = undefined, limit = 100, params = {}) {
         await this.loadMarkets ();
         params['product'] = 0;
@@ -410,24 +445,12 @@ module.exports = class kabus extends Exchange {
     }
 
     async fetchOrder (id, symbol = undefined, params = {}) {
-        if (symbol === undefined) {
-            throw new ArgumentsRequired (this.id + ' fetchOrder() requires a `symbol` argument');
-        }
         const orders = await this.fetchOrders ();
         const ordersById = this.indexBy (orders, 'id');
         if (id in ordersById) {
             return ordersById[id];
         }
         throw new OrderNotFound (this.id + 'No order found with id ' + id);
-    }
-
-    async cancelOrder (id, params = {}) {
-        await this.loadMarkets ();
-        const body = {
-            'OrderID': id,
-            'Password': this.kabucom_password,
-        };
-        return await this.privatePutCancelorder (this.extend (body, params));
     }
 
     parseBalance (response) {
@@ -514,5 +537,11 @@ module.exports = class kabus extends Exchange {
         }
         const response = this.privatePutRegister (body);
         return response['RegistList'];
+    }
+
+    async dummy_for_transpile () {
+        // Don't care.
+        // Dummy function to make transpile work.
+        throw ArgumentsRequired;
     }
 };

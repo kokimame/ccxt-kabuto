@@ -139,6 +139,94 @@ class kabus(Exchange):
         exchange = int(market.split('@')[1])
         return {'Code': stock_code, 'Exchange': exchange, 'Market': market, 'Fiat': fiat}
 
+    def parse_order(self, order, market=None):
+        #     {'AccountType': 2,
+        #       'CumQty': 0.0,
+        #       'DelivType': 2,
+        #       'Details': [{'Commission': 0.0,
+        #                    'CommissionTax': 0.0,
+        #                    'DelivDay': 20220427,
+        #                    'ExchangeID': None,
+        #                    'ExecutionDay': None,
+        #                    'ExecutionID': None,
+        #                    'ID': '20220423A01N86096041',
+        #                    'OrdType': 1,
+        #                    'Price': 0.0,
+        #                    'Qty': 100.0,
+        #                    'RecType': 1,
+        #                    'SeqNum': 1,
+        #                    'State': 3,
+        #                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'},
+        #                   {'Commission': 0.0,
+        #                    'CommissionTax': 0.0,
+        #                    'DelivDay': 20220427,
+        #                    'ExchangeID': None,
+        #                    'ExecutionDay': None,
+        #                    'ExecutionID': None,
+        #                    'ID': '20220423B01N86096042',
+        #                    'OrdType': 1,
+        #                    'Price': 0.0,
+        #                    'Qty': 100.0,
+        #                    'RecType': 4,
+        #                    'SeqNum': 2,
+        #                    'State': 1,
+        #                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'}],
+        #       'Exchange': 1,
+        #       'ExchangeName': '東証ス',
+        #       'ExpireDay': 20220425,
+        #       'ID': '20220423A01N86096041',
+        #       'OrdType': 1,
+        #       'OrderQty': 100.0,
+        #       'OrderState': 1,
+        #       'Price': 0.0,
+        #       'RecvTime': '2022-04-23T14:31:16.652838+09:00',
+        #       'Side': '2',
+        #       'State': 1,
+        #       'Symbol': '9318',
+        #       'SymbolName': 'アジア開発キャピタル'},
+        #     }
+        id = self.safe_string(order, 'ID')
+        price = self.safe_float(order, 'Price')
+        amount = self.safe_float(order, 'OrderQty')
+        cumQty = self.safe_float(order, 'CumQty')
+        side = self.safe_string_lower({'1': 'sell', '2': 'buy'}, order['Side'])
+        timestamp = self.parse8601(self.safe_string(order, 'RecvTime'))
+        stock_code = self.safe_string(order, 'Symbol')
+        exchange = self.safe_string(order, 'Exchange')
+        order_type = 'limit'
+        if price == 0:
+            order_type = 'market'
+        # Order status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
+        n_details = len(order['Details'])
+        if n_details < 1:
+            raise ExchangeError(self.id + ' expects to have at least 1 detail per order but 0 given')
+        lastDetail = order['Details'][n_details - 1]
+        # Get the latest state from the Details
+        status = self.safe_string({'1': 'open', '3': 'closed'}, lastDetail['State'])
+        return self.safe_order({
+            'id': id,
+            'clientOrderId': None,
+            'info': order,
+            'timestamp': timestamp,
+            'datetime': self.iso8601(timestamp),
+            'lastTradeTimestamp': None,
+            'status': status,
+            'symbol': stock_code + '@' + exchange + '/JPY',
+            'type': order_type,
+            'timeInForce': None,
+            'postOnly': None,
+            'side': side,
+            'price': price,
+            'stopPrice': None,
+            'cost': None,
+            'amount': amount,
+            'filled': cumQty,
+            'remaining': amount - cumQty,
+            'fee': None,
+            'average': None,
+            'trades': None,
+        }, market)
+
     def prepare_order(self, symbol, type, side, amount, price):
         # 現物株式取引用のパラメタ設定
         symbolParam = self.parse_symbol(symbol)
@@ -177,10 +265,40 @@ class kabus(Exchange):
         response = self.privatePostSendorder(self.extend(body, params))
         # {'OrderId': '20220423A01N86096051', 'Result': 0}
         id = self.safe_string(response, 'OrderId')
-        return {
-            'info': response,
-            'id': id,
+        result = self.safe_string(response, 'Result')
+        if result == '0':
+            # NOTE: Since createOrder in Kabus does not return the detail of a newly created order,
+            # we look for the detail using fetchOrder right after the order created.
+            # This process may introduce errors considering the order perhaps is not ready/created in such a short time.
+            order = self.fetch_order(id)
+            order['info'] = response
+            return order
+        else:
+            return {
+                'info': response,
+                'id': id,
+            }
+
+    def cancel_order(self, id, params={}):
+        self.load_markets()
+        body = {
+            'OrderID': id,
+            'Password': self.kabucom_password,
         }
+        response = self.privatePutCancelorder(self.extend(body, params))
+        result = self.safe_string(response, 'Result')
+        if result == '0':
+            # NOTE: Since createOrder in Kabus does not return the detail of a newly created order,
+            # we look for the detail using fetchOrder right after the order created.
+            # This process may introduce errors considering the order perhaps is not ready/created in such a short time.
+            order = self.fetch_order(id)
+            order['info'] = response
+            return order
+        else:
+            return {
+                'info': response,
+                'id': id,
+            }
 
     def fetch_token(self):
         # Fetch one-time access token for Kabus API
@@ -282,94 +400,6 @@ class kabus(Exchange):
         response = self.privateGetPositions(self.extend(request, params))
         return self.parse_trades(response, market, since, limit)
 
-    def parse_order(self, order, market=None):
-        #     {'AccountType': 2,
-        #       'CumQty': 0.0,
-        #       'DelivType': 2,
-        #       'Details': [{'Commission': 0.0,
-        #                    'CommissionTax': 0.0,
-        #                    'DelivDay': 20220427,
-        #                    'ExchangeID': None,
-        #                    'ExecutionDay': None,
-        #                    'ExecutionID': None,
-        #                    'ID': '20220423A01N86096041',
-        #                    'OrdType': 1,
-        #                    'Price': 0.0,
-        #                    'Qty': 100.0,
-        #                    'RecType': 1,
-        #                    'SeqNum': 1,
-        #                    'State': 3,
-        #                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'},
-        #                   {'Commission': 0.0,
-        #                    'CommissionTax': 0.0,
-        #                    'DelivDay': 20220427,
-        #                    'ExchangeID': None,
-        #                    'ExecutionDay': None,
-        #                    'ExecutionID': None,
-        #                    'ID': '20220423B01N86096042',
-        #                    'OrdType': 1,
-        #                    'Price': 0.0,
-        #                    'Qty': 100.0,
-        #                    'RecType': 4,
-        #                    'SeqNum': 2,
-        #                    'State': 1,
-        #                    'TransactTime': '2022-04-23T14:31:16.652838+09:00'}],
-        #       'Exchange': 1,
-        #       'ExchangeName': '東証ス',
-        #       'ExpireDay': 20220425,
-        #       'ID': '20220423A01N86096041',
-        #       'OrdType': 1,
-        #       'OrderQty': 100.0,
-        #       'OrderState': 1,
-        #       'Price': 0.0,
-        #       'RecvTime': '2022-04-23T14:31:16.652838+09:00',
-        #       'Side': '2',
-        #       'State': 1,
-        #       'Symbol': '9318',
-        #       'SymbolName': 'アジア開発キャピタル'},
-        #     }
-        id = self.safe_string(order, 'ID')
-        price = self.safe_float(order, 'Price')
-        amount = self.safe_float(order, 'OrderQty')
-        cumQty = self.safe_float(order, 'CumQty')
-        side = self.safe_string_lower({'1': 'sell', '2': 'buy'}, order['Side'])
-        timestamp = self.parse8601(self.safe_string(order, 'RecvTime'))
-        stock_code = self.safe_string(order, 'Symbol')
-        exchange = self.safe_string(order, 'Exchange')
-        order_type = 'limit'
-        if price == 0:
-            order_type = 'market'
-        # Order status is one of ['open', 'closed', 'canceled', 'expired', 'rejected']
-        n_details = len(order['Details'])
-        if n_details < 1:
-            raise ExchangeError(self.id + ' expects to have at least 1 detail per order but 0 given')
-        lastDetail = order['Details'][n_details - 1]
-        # Get the latest state from the Details
-        status = self.safe_string({'1': 'open', '3': 'closed'}, lastDetail['State'])
-        return self.safe_order({
-            'id': id,
-            'clientOrderId': None,
-            'info': order,
-            'timestamp': timestamp,
-            'datetime': self.iso8601(timestamp),
-            'lastTradeTimestamp': None,
-            'status': status,
-            'symbol': stock_code + '@' + exchange + '/JPY',
-            'type': order_type,
-            'timeInForce': None,
-            'postOnly': None,
-            'side': side,
-            'price': price,
-            'stopPrice': None,
-            'cost': None,
-            'amount': amount,
-            'filled': cumQty,
-            'remaining': amount - cumQty,
-            'fee': None,
-            'average': None,
-            'trades': None,
-        }, market)
-
     def fetch_orders(self, since=None, limit=100, params={}):
         self.load_markets()
         params['product'] = 0
@@ -393,21 +423,11 @@ class kabus(Exchange):
         return closed_orders
 
     def fetch_order(self, id, symbol=None, params={}):
-        if symbol is None:
-            raise ArgumentsRequired(self.id + ' fetchOrder() requires a `symbol` argument')
         orders = self.fetch_orders()
         ordersById = self.index_by(orders, 'id')
         if id in ordersById:
             return ordersById[id]
         raise OrderNotFound(self.id + 'No order found with id ' + id)
-
-    def cancel_order(self, id, params={}):
-        self.load_markets()
-        body = {
-            'OrderID': id,
-            'Password': self.kabucom_password,
-        }
-        return self.privatePutCancelorder(self.extend(body, params))
 
     def parse_balance(self, response):
         # Parse and organize balance information.
@@ -482,3 +502,8 @@ class kabus(Exchange):
             body['Symbols'].append(tickerVal)
         response = self.privatePutRegister(body)
         return response['RegistList']
+
+    def dummy_for_transpile(self):
+        # Don't care.
+        # Dummy function to make transpile work.
+        raise ArgumentsRequired
