@@ -183,8 +183,8 @@ module.exports = class kabus extends Exchange {
         //       'Symbol': '9318',
         //       'SymbolName': 'アジア開発キャピタル'},
         //     }
+        let price = this.safeFloat (order, 'Price');
         const id = this.safeString (order, 'ID');
-        const price = this.safeFloat (order, 'Price');
         const amount = this.safeFloat (order, 'OrderQty');
         const cumQty = this.safeFloat (order, 'CumQty');
         const side = this.safeStringLower ({ '1': 'sell', '2': 'buy' }, order['Side']);
@@ -201,6 +201,12 @@ module.exports = class kabus extends Exchange {
             throw new ExchangeError (this.id + ' expects to have at least 1 detail per order but 0 given');
         }
         const lastDetail = order['Details'][n_details - 1];
+        if (order_type === 'market' && !(price > 0)) {
+            const last_price = this.safeFloat (lastDetail, 'Price');
+            if (last_price > 0) {
+                price = last_price;
+            }
+        }
         // Get the latest state from the Details
         const status = this.safeString ({ '1': 'open', '3': 'closed' }, lastDetail['State']);
         return this.safeOrder ({

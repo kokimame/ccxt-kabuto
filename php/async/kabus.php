@@ -119,7 +119,7 @@ class kabus extends Exchange {
             if ($query) {
                 $request .= '?' . $this->urlencode($query);
             }
-        } else if (($method === 'POST') || ($method === 'PUT')) {
+        } elseif (($method === 'POST') || ($method === 'PUT')) {
             $body = $this->json($query);
         }
         $this->check_required_credentials();
@@ -191,8 +191,8 @@ class kabus extends Exchange {
         //       'Symbol' => '9318',
         //       'SymbolName' => 'アジア開発キャピタル'),
         //     }
-        $id = $this->safe_string($order, 'ID');
         $price = $this->safe_float($order, 'Price');
+        $id = $this->safe_string($order, 'ID');
         $amount = $this->safe_float($order, 'OrderQty');
         $cumQty = $this->safe_float($order, 'CumQty');
         $side = $this->safe_string_lower(array( '1' => 'sell', '2' => 'buy' ), $order['Side']);
@@ -209,6 +209,12 @@ class kabus extends Exchange {
             throw new ExchangeError($this->id . ' expects to have at least 1 detail per $order but 0 given');
         }
         $lastDetail = $order['Details'][$n_details - 1];
+        if ($order_type === 'market' && !($price > 0)) {
+            $last_price = $this->safe_float($lastDetail, 'Price');
+            if ($last_price > 0) {
+                $price = $last_price;
+            }
+        }
         // Get the latest state from the Details
         $status = $this->safe_string(array( '1' => 'open', '3' => 'closed' ), $lastDetail['State']);
         return $this->safe_order(array(
@@ -281,6 +287,8 @@ class kabus extends Exchange {
             // NOTE => Since createOrder in Kabus does not return the detail of a newly created $order,
             // we look for the detail using fetchOrder right after the $order created.
             // This process may introduce errors considering the $order perhaps is not ready/created in such a short time.
+            // NOTE 2 => Maybe does not have to call fetchOrder.
+            // Instead, use & return "symbol, $type, $side, $id" of the $order param
             $order = $this->fetch_order($id);
             $order['info'] = $response;
             return $order;

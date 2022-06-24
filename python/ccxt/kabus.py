@@ -185,8 +185,8 @@ class kabus(Exchange):
         #       'Symbol': '9318',
         #       'SymbolName': 'アジア開発キャピタル'},
         #     }
-        id = self.safe_string(order, 'ID')
         price = self.safe_float(order, 'Price')
+        id = self.safe_string(order, 'ID')
         amount = self.safe_float(order, 'OrderQty')
         cumQty = self.safe_float(order, 'CumQty')
         side = self.safe_string_lower({'1': 'sell', '2': 'buy'}, order['Side'])
@@ -201,6 +201,10 @@ class kabus(Exchange):
         if n_details < 1:
             raise ExchangeError(self.id + ' expects to have at least 1 detail per order but 0 given')
         lastDetail = order['Details'][n_details - 1]
+        if order_type == 'market' and not (price > 0):
+            last_price = self.safe_float(lastDetail, 'Price')
+            if last_price > 0:
+                price = last_price
         # Get the latest state from the Details
         status = self.safe_string({'1': 'open', '3': 'closed'}, lastDetail['State'])
         return self.safe_order({
@@ -270,6 +274,8 @@ class kabus(Exchange):
             # NOTE: Since createOrder in Kabus does not return the detail of a newly created order,
             # we look for the detail using fetchOrder right after the order created.
             # This process may introduce errors considering the order perhaps is not ready/created in such a short time.
+            # NOTE 2: Maybe does not have to call fetchOrder.
+            # Instead, use & return "symbol, type, side, id" of the order param
             order = self.fetch_order(id)
             order['info'] = response
             return order
