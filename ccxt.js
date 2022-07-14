@@ -122,6 +122,7 @@ const exchanges = {
     'indodax':                 require ('./js/indodax.js'),
     'itbit':                   require ('./js/itbit.js'),
     'kabus':                   require ('./js/kabus.js'),
+    'kabusday':                require ('./js/kabusday.js'),
     'kraken':                  require ('./js/kraken.js'),
     'kucoin':                  require ('./js/kucoin.js'),
     'kucoinfutures':           require ('./js/kucoinfutures.js'),

@@ -141,6 +141,7 @@ class Exchange {
         'indodax',
         'itbit',
         'kabus',
+        'kabusday',
         'kraken',
         'kucoin',
         'kucoinfutures',

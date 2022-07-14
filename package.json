@@ -583,7 +583,9 @@
     "CoinFLEX",
     "twitter.com",
     "Kabus",
-    "Kabus for Day-Trading Margin"
+    "Kabus for Day-Trading Margin",
+    "KabusDayTrading",
+    "KabusDay"
   ],
   "collective": {
     "type": "opencollective",

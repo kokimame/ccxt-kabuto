@@ -132,6 +132,7 @@ from ccxt.async_support.independentreserve import independentreserve      # noqa
 from ccxt.async_support.indodax import indodax                            # noqa: F401
 from ccxt.async_support.itbit import itbit                                # noqa: F401
 from ccxt.async_support.kabus import kabus                                # noqa: F401
+from ccxt.async_support.kabusday import kabusday                          # noqa: F401
 from ccxt.async_support.kraken import kraken                              # noqa: F401
 from ccxt.async_support.kucoin import kucoin                              # noqa: F401
 from ccxt.async_support.kucoinfutures import kucoinfutures                # noqa: F401
@@ -256,6 +257,7 @@ exchanges = [
     'indodax',
     'itbit',
     'kabus',
+    'kabusday',
     'kraken',
     'kucoin',
     'kucoinfutures',

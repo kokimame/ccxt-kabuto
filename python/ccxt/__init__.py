@@ -152,6 +152,7 @@ from ccxt.independentreserve import independentreserve      # noqa: F401
 from ccxt.indodax import indodax                            # noqa: F401
 from ccxt.itbit import itbit                                # noqa: F401
 from ccxt.kabus import kabus                                # noqa: F401
+from ccxt.kabusday import kabusday                          # noqa: F401
 from ccxt.kraken import kraken                              # noqa: F401
 from ccxt.kucoin import kucoin                              # noqa: F401
 from ccxt.kucoinfutures import kucoinfutures                # noqa: F401
@@ -276,6 +277,7 @@ exchanges = [
     'indodax',
     'itbit',
     'kabus',
+    'kabusday',
     'kraken',
     'kucoin',
     'kucoinfutures',
