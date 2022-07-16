@@ -63,6 +63,7 @@ class kabusday(Exchange):
                 'fetchOrder': True,
                 'fetchOrderBook': True,
                 'fetchOrders': True,
+                'fetchPositions': True,
                 'fetchTicker': True,
                 'fetchTickers': True,
                 'fetchTrades': True,
@@ -512,6 +513,9 @@ class kabusday(Exchange):
         for i in range(0, len(ohlcvs)):
             data.append(ohlcvs[i][0:-1])
         return data
+
+    def fetch_positions(self, symbols=None, params={}):
+        return []
 
     def fetch_market_leverage_tiers(self, symbol, params={}):
         self.load_markets()

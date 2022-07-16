@@ -211,7 +211,7 @@ class kabus extends Exchange {
         $lastDetail = $order['Details'][$n_details - 1];
         if ($order_type === 'market' && !($price > 0)) {
             $last_price = $this->safe_float($lastDetail, 'Price');
-            if ($last_price > 0) {
+            if ($last_price !== null && $last_price > 0) {
                 $price = $last_price;
             }
         }

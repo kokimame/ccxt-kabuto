@@ -63,6 +63,7 @@ class kabusday extends Exchange {
                 'fetchOrder' => true,
                 'fetchOrderBook' => true,
                 'fetchOrders' => true,
+                'fetchPositions' => true,
                 'fetchTicker' => true,
                 'fetchTickers' => true,
                 'fetchTrades' => true,
@@ -553,6 +554,10 @@ class kabusday extends Exchange {
             $data[] = mb_substr($ohlcvs[$i], 0, -1 - 0);
         }
         return $data;
+    }
+
+    public function fetch_positions($symbols = null, $params = array ()) {
+        return array();
     }
 
     public function fetch_market_leverage_tiers($symbol, $params = array ()) {

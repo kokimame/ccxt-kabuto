@@ -203,7 +203,7 @@ class kabus(Exchange):
         lastDetail = order['Details'][n_details - 1]
         if order_type == 'market' and not (price > 0):
             last_price = self.safe_float(lastDetail, 'Price')
-            if last_price > 0:
+            if last_price is not None and last_price > 0:
                 price = last_price
         # Get the latest state from the Details
         status = self.safe_string({'1': 'open', '3': 'closed'}, lastDetail['State'])
