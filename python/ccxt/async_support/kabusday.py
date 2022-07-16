@@ -15,7 +15,7 @@ class kabusday(Exchange):
     def describe(self):
         return self.deep_extend(super(kabusday, self).describe(), {
             'id': 'kabusday',
-            'name': 'KabusDay',
+            'name': 'Kabusday',
             'countries': ['JP'],
             'version': 'v1',
             'rateLimit': 1000,
@@ -203,7 +203,7 @@ class kabusday(Exchange):
         lastDetail = order['Details'][n_details - 1]
         if order_type == 'market' and not (price > 0):
             last_price = self.safe_float(lastDetail, 'Price')
-            if last_price != None and last_price > 0:
+            if last_price is not None and last_price > 0:
                 price = last_price
         # Get the latest state from the Details
         status = self.safe_string({'1': 'open', '3': 'closed'}, lastDetail['State'])

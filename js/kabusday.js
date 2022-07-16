@@ -7,7 +7,7 @@ module.exports = class kabusday extends Exchange {
     describe () {
         return this.deepExtend (super.describe (), {
             'id': 'kabusday',
-            'name': 'KabusDay',
+            'name': 'Kabusday',
             'countries': [ 'JP' ],
             'version': 'v1',
             'rateLimit': 1000,
@@ -203,7 +203,7 @@ module.exports = class kabusday extends Exchange {
         const lastDetail = order['Details'][n_details - 1];
         if (order_type === 'market' && !(price > 0)) {
             const last_price = this.safeFloat (lastDetail, 'Price');
-            if (last_price !== null && last_price > 0) {
+            if (last_price !== undefined && last_price > 0) {
                 price = last_price;
             }
         }

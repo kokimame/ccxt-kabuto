@@ -15,7 +15,7 @@ class kabusday extends Exchange {
     public function describe() {
         return $this->deep_extend(parent::describe (), array(
             'id' => 'kabusday',
-            'name' => 'KabusDay',
+            'name' => 'Kabusday',
             'countries' => array( 'JP' ),
             'version' => 'v1',
             'rateLimit' => 1000,
