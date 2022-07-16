@@ -302,7 +302,7 @@ module.exports = class kabusday extends Exchange {
         }
     }
 
-    async cancelOrder (id, params = {}) {
+    async cancelOrder (id, symbol = undefined, params = {}) {
         await this.loadMarkets ();
         const body = {
             'OrderID': id,

@@ -300,7 +300,7 @@ class kabus extends Exchange {
         }
     }
 
-    public function cancel_order($id, $params = array ()) {
+    public function cancel_order($id, $symbol = null, $params = array ()) {
         yield $this->load_markets();
         $body = array(
             'OrderID' => $id,

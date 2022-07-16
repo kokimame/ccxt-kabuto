@@ -285,7 +285,7 @@ class kabus(Exchange):
                 'id': id,
             }
 
-    async def cancel_order(self, id, params={}):
+    async def cancel_order(self, id, symbol=None, params={}):
         await self.load_markets()
         body = {
             'OrderID': id,

@@ -285,7 +285,7 @@ class kabus(Exchange):
                 'id': id,
             }
 
-    def cancel_order(self, id, params={}):
+    def cancel_order(self, id, symbol=None, params={}):
         self.load_markets()
         body = {
             'OrderID': id,
