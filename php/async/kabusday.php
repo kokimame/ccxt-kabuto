@@ -56,6 +56,8 @@ class kabusday extends Exchange {
                 'createOrder' => true,
                 'fetchBalance' => true,
                 'fetchClosedOrders' => true,
+                'fetchLeverageTiers' => false,
+                'fetchMarketLeverageTiers' => true,
                 'fetchOHLCV' => true,
                 'fetchOpenOrders' => true,
                 'fetchOrder' => true,
@@ -365,7 +367,11 @@ class kabusday extends Exchange {
                 'quote' => 'JPY',
                 'maker' => 0.0,
                 'taker' => 0.0,
+                'future' => true,
+                'spot' => true,
+                'margin' => true,
                 'active' => true,
+                'linear' => true,
                 'min_unit' => 100, // Some of ETF are tradable from unit 10
                 // value limits when placing orders on this market
                 'limits' => array(
@@ -547,6 +553,22 @@ class kabusday extends Exchange {
             $data[] = mb_substr($ohlcvs[$i], 0, -1 - 0);
         }
         return $data;
+    }
+
+    public function fetch_market_leverage_tiers($symbol, $params = array ()) {
+        yield $this->load_markets();
+        $market = $this->market($symbol);
+        $tiers = array();
+        $tiers[] = array(
+            'tier' => 1,
+            'currency' => $market['quote'],
+            'minNotional' => 0,
+            'maxNotional' => 1000000000000,
+            'maintenanceMarginRate' => 0.25,
+            'maxLeverage' => 3.3,
+            'info' => array(),
+        );
+        return $tiers;
     }
 
     public function register_whitelist($whitelist) {

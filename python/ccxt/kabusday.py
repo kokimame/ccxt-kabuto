@@ -56,6 +56,8 @@ class kabusday(Exchange):
                 'createOrder': True,
                 'fetchBalance': True,
                 'fetchClosedOrders': True,
+                'fetchLeverageTiers': False,
+                'fetchMarketLeverageTiers': True,
                 'fetchOHLCV': True,
                 'fetchOpenOrders': True,
                 'fetchOrder': True,
@@ -346,7 +348,11 @@ class kabusday(Exchange):
                 'quote': 'JPY',
                 'maker': 0.0,
                 'taker': 0.0,
+                'future': True,
+                'spot': True,
+                'margin': True,
                 'active': True,
+                'linear': True,
                 'min_unit': 100,  # Some of ETF are tradable from unit 10
                 # value limits when placing orders on self market
                 'limits': {
@@ -506,6 +512,21 @@ class kabusday(Exchange):
         for i in range(0, len(ohlcvs)):
             data.append(ohlcvs[i][0:-1])
         return data
+
+    def fetch_market_leverage_tiers(self, symbol, params={}):
+        self.load_markets()
+        market = self.market(symbol)
+        tiers = []
+        tiers.append({
+            'tier': 1,
+            'currency': market['quote'],
+            'minNotional': 0,
+            'maxNotional': 1000000000000,
+            'maintenanceMarginRate': 0.25,
+            'maxLeverage': 3.3,
+            'info': [],
+        })
+        return tiers
 
     def register_whitelist(self, whitelist):
         # Register whitelist symbols.
