@@ -203,7 +203,7 @@ module.exports = class kabusday extends Exchange {
         const lastDetail = order['Details'][n_details - 1];
         if (order_type === 'market' && !(price > 0)) {
             const last_price = this.safeFloat (lastDetail, 'Price');
-            if (last_price > 0) {
+            if (last_price !== null && last_price > 0) {
                 price = last_price;
             }
         }
@@ -242,7 +242,7 @@ module.exports = class kabusday extends Exchange {
         // ※信用一括返済の場合、各建玉IDと返済したい数量を入力してください。
         // ※建玉IDは「E」から始まる番号です。`
         // 信用取引用のパラメタ設定
-        const reduceOnly = this.safeString (params, 'reduceOnly', false);
+        const reduceOnly = this.safeValue (params, 'reduceOnly');
         const symbolParam = this.parseSymbol (symbol);
         if (type === 'market') {
             price = 0; // 成行執行→price=0
