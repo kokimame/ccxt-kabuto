@@ -55,6 +55,7 @@ module.exports = class kabusday extends Exchange {
                 'fetchOrder': true,
                 'fetchOrderBook': true,
                 'fetchOrders': true,
+                'fetchPositions': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'fetchTrades': true,
@@ -545,6 +546,10 @@ module.exports = class kabusday extends Exchange {
             data.push (ohlcvs[i].slice (0, -1));
         }
         return data;
+    }
+
+    async fetchPositions (symbols = undefined, params = {}) {
+        return [];
     }
 
     async fetchMarketLeverageTiers (symbol, params = {}) {
