@@ -203,7 +203,7 @@ module.exports = class kabus extends Exchange {
         const lastDetail = order['Details'][n_details - 1];
         if (order_type === 'market' && !(price > 0)) {
             const last_price = this.safeFloat (lastDetail, 'Price');
-            if (last_price > 0) {
+            if (last_price !== undefined && last_price > 0) {
                 price = last_price;
             }
         }
